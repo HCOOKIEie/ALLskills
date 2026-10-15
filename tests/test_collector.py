@@ -85,7 +85,7 @@ class CollectorTests(unittest.TestCase):
         c.RAW_FILE.write_text(json.dumps({"repos": [self.repo]}), encoding="utf-8")
         old = {self.repo["full_name"]: {"skillCount": 7, "checkedAt": "2026-01-01T00:00:00Z"}}
         c.CACHE_FILE.write_text(json.dumps(old), encoding="utf-8")
-        with patch.object(c, "tree_skill_count", return_value=None):
+        with patch.object(c, "core_request_budget", return_value=5), patch.object(c, "tree_skill_count", return_value=None):
             self.assertEqual(c.phase_verify(5, 3), old)
 
     def test_growth_needs_two_real_observations_and_does_not_extrapolate(self):
@@ -144,9 +144,27 @@ class CollectorTests(unittest.TestCase):
     def test_failed_metadata_refresh_does_not_invent_an_observation(self):
         old = {**self.repo, "_observedAt": "2026-01-01T00:00:00Z"}
         c.RAW_FILE.write_text(json.dumps({"repos": [old]}), encoding="utf-8")
-        with patch.object(c, "api_get", return_value=None):
+        with patch.object(c, "core_request_budget", return_value=1), patch.object(c, "api_get", return_value=None):
             result = c.phase_refresh(1, 1)
         self.assertEqual(result["repos"], [old])
+
+    def test_request_budget_uses_actual_quota_and_reserves_publishing_capacity(self):
+        previous = dict(c.RATE)
+        self.addCleanup(c.rate_set, **previous)
+        with patch.object(c, "api_get", return_value={"resources": {"core": {"remaining": 180, "reset": 999}}}):
+            self.assertEqual(c.core_request_budget(3500, reserve=50), 130)
+            self.assertEqual(c.core_request_budget(100, reserve=400), 0)
+        with patch.object(c, "api_get", return_value=None):
+            self.assertEqual(c.core_request_budget(500), 0)
+
+    def test_exhausted_core_quota_does_not_wait_or_send_queued_requests(self):
+        previous = dict(c.RATE)
+        self.addCleanup(c.rate_set, **previous)
+        c.rate_set(core_remaining=0)
+        with patch.object(c.urllib.request, "urlopen") as request, patch.object(c, "sleep_until") as sleep:
+            self.assertIsNone(c.api_get("https://api.github.com/repos/acme/skills", "core"))
+        request.assert_not_called()
+        sleep.assert_not_called()
 
     def test_cache_eviction_keeps_published_verification(self):
         c.RAW_FILE.write_text(json.dumps({"repos": [{**self.repo, "_observedAt": datetime.now(timezone.utc).isoformat()}]}), encoding="utf-8")

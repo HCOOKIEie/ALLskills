@@ -107,7 +107,7 @@ python tools/collect_skills.py emit
 ### 提升配额
 
 GitHub 匿名访问限制很严（搜索 10 次/分钟、核心 60 次/小时）。
-设置一个 token 可以把上限提到 5000 次/小时，采集速度和核验覆盖率都会大幅提升：
+个人 token 通常有 5000 次/小时额度；GitHub Actions 内置 `GITHUB_TOKEN` 通常是每仓库 1000 次/小时。采集器读取实际剩余额度并预留发布容量，额度不足时保留旧记录、下轮继续，不等待一小时拖住发布。自动任务每轮最多额外刷新 550 个已知仓库、核验 300 个文件树；搜索返回的仓库同时获得最新星标，长尾仓库按最旧观测优先轮换。额度说明见 [GitHub 官方文档](https://docs.github.com/en/actions/reference/limits)。
 
 ```powershell
 $env:GITHUB_TOKEN = "ghp_xxx"

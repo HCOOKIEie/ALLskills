@@ -52,8 +52,8 @@ jobs:
         continue-on-error: true
         run: |
           python tools/collect_skills.py search --pages 2 --min-stars 3
-          python tools/collect_skills.py refresh --refresh-budget 3500 --workers 8
-          python tools/collect_skills.py verify --verify-budget 400
+          python tools/collect_skills.py refresh --refresh-budget 550 --workers 8
+          python tools/collect_skills.py verify --verify-budget 300
           python tools/collect_skills.py scan --workers 12 --min-stars 3
           python tools/collect_skills.py emit --min-stars 3
 

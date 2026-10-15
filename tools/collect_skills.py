@@ -102,7 +102,10 @@ def api_get(url: str, bucket: str, timeout: int = 20, retries: int = 2):
     remaining_key = f"{bucket}_remaining"
     reset_key = f"{bucket}_reset"
     for attempt in range(retries):
-        if rate_get(remaining_key) <= 1:
+        if bucket == "core" and rate_get(remaining_key) <= 1 and not url.endswith("/rate_limit"):
+            log("  [rate] core quota exhausted; defer remaining work to the next run")
+            return None
+        if bucket == "search" and rate_get(remaining_key) <= 1:
             log(f"  [rate] {bucket} exhausted, waiting {max(rate_get(reset_key) - time.time(), 0):.0f}s")
             sleep_until(rate_get(reset_key))
             if bucket == "search":
@@ -128,6 +131,10 @@ def api_get(url: str, bucket: str, timeout: int = 20, retries: int = 2):
                     rate_set(**{reset_key: float(exc.headers["x-ratelimit-reset"])})
                 rate_set(**{remaining_key: 0})
                 log(f"  [rate] {exc.code} on {bucket} (attempt {attempt + 1}/{retries})")
+                if bucket == "core":
+                    # Do not let queued worker requests wait an hour and turn a
+                    # useful partial refresh into a timed-out deployment.
+                    return None
                 sleep_until(rate_get(reset_key))
                 if bucket == "search":
                     time.sleep(2.0)
@@ -139,6 +146,22 @@ def api_get(url: str, bucket: str, timeout: int = 20, retries: int = 2):
         except Exception:
             time.sleep(1.5)
     return None
+
+
+def core_request_budget(requested: int, reserve: int = 50) -> int:
+    """Use the server's actual quota, including smaller Actions token limits."""
+    if requested <= 0:
+        return 0
+    data = api_get("https://api.github.com/rate_limit", "core", timeout=15, retries=1)
+    core = data.get("resources", {}).get("core") if isinstance(data, dict) else None
+    if not isinstance(core, dict) or not isinstance(core.get("remaining"), int):
+        log("  [rate] cannot confirm core quota; preserve data and defer core requests")
+        return 0
+    remaining = max(0, core["remaining"])
+    rate_set(core_remaining=remaining, core_reset=core.get("reset", 0))
+    allowed = min(requested, max(0, remaining - reserve))
+    log(f"  [rate] core remaining {remaining}; request budget {allowed} (reserve {reserve})")
+    return allowed
 
 
 # ---------------------------------------------------------------- search
@@ -234,6 +257,9 @@ def phase_refresh(budget: int, workers: int = 8) -> dict:
     now = datetime.now(timezone.utc).timestamp()
     pending = [r for r in repos if now - iso_timestamp(r.get("_observedAt")) > 1800]
     pending.sort(key=lambda r: iso_timestamp(r.get("_observedAt")))
+    if pending and budget > 0:
+        # Leave room for tree verification and the Pages/data-branch APIs.
+        budget = core_request_budget(budget, reserve=400 if TOKEN else 20)
     batch = pending[:max(0, budget)]
     if not batch:
         log("  [refresh] no stale metadata within this run's budget")
@@ -335,14 +361,14 @@ def phase_verify(budget: int, min_stars: int, recheck: bool = False, recheck_bel
         pending.sort(key=lambda r: (-(r.get("stargazers_count") or 0), r.get("size") or 0))
     log(f"{len(pending)} repositories pending verification")
 
-    # A token-backed Actions run has ample core quota. Run independent tree
-    # requests concurrently, while keeping the anonymous path conservative.
+    # Run independent tree requests concurrently within the actual quota.
     # The cache is only written by the main thread so interrupted runs remain
     # valid JSON and can resume safely.
     if not pending:
         log("  [verify] all eligible repositories are already up to date")
         return cache
-    if budget <= 0 or rate_get("core_remaining") <= 2:
+    budget = core_request_budget(budget, reserve=50 if TOKEN else 5)
+    if budget <= 0:
         log("  [verify] budget/quota guard before starting")
         return cache
     batch = pending[:budget]
