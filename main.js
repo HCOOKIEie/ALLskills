@@ -1,442 +1,1553 @@
-/* SkillAtlas — data-driven directory over the GitHub-collected dataset. */
+/* SkillAtlas — static, offline-first UI. Network requests are always user initiated. */
 (function () {
-  'use strict';
-
+  "use strict";
+  var C = window.SkillAtlas;
+  var $ = function (selector) {
+    return document.querySelector(selector);
+  };
+  var esc = C.esc;
+  var owns = function (object, key) {
+    return Object.prototype.hasOwnProperty.call(object, key);
+  };
   var PAGE_SIZE = 24;
-  var savedProfile = {};
-  try { savedProfile = JSON.parse(localStorage.getItem('skillatlas-profile') || '{}'); } catch (ignore) {}
-  var state = { data: null, cat: '全部', sort: 'trend', q: '', verifiedOnly: false, skillOnly: false, page: 1, dailyOffset: 0, rank: 'trend', goal: savedProfile.goal || 'build', pref: savedProfile.pref || '编程开发', live: [], liveStatus: 'idle' };
-
-  var CAT_COLOR = {
-    '编程开发': '#2563eb', '文档办公': '#0f766e', '科研学术': '#7c3aed', '生物医药': '#0d9488',
-    '数据科学': '#0284c7', '浏览器自动化': '#ea580c', '设计创意': '#db2777', '写作内容': '#9333ea',
-    '集成连接': '#0891b2', '效率工具': '#4f46e5', 'Agent 框架': '#16a34a', '其他': '#6b7280'
+  var VIEWS = {
+    discover: "发现灵感",
+    browse: "全部 Skills",
+    ranking: "热门榜单",
+    saved: "我的收藏",
+    about: "关于与数据来源",
   };
-
-  var $ = function (s) { return document.querySelector(s); };
-  var esc = function (v) {
-    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
-      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+  var PATHS = {
+    compass:
+      '<circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/>',
+    grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    trend: '<path d="m3 17 6-6 4 4 8-10M15 5h6v6"/>',
+    bookmark: '<path d="M6 4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17l-6-4-6 4Z"/>',
+    code: '<path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 4l-4 16"/>',
+    palette:
+      '<path d="M12 3a9 9 0 0 0 0 18h1a2 2 0 0 0 1.5-3.3 1.5 1.5 0 0 1 1-2.5h2A4 4 0 0 0 21 11a9 9 0 0 0-9-8Z"/><path d="M7 11h.01M9 7h.01M14 6h.01M18 10h.01" stroke-width="2.8"/>',
+    flask:
+      '<path d="M9 3h6M10 3v6l-6 10a1.3 1.3 0 0 0 1.2 2h13.6a1.3 1.3 0 0 0 1.2-2L14 9V3M8 14h8"/>',
+    file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8Zm0 0v5h5M9 12h6M9 16h6"/>',
+    globe:
+      '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
+    bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-7Z"/>',
+    layers: '<path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 16l10 5 10-5"/>',
+    puzzle:
+      '<path d="M4 4h5a3 3 0 1 1 6 0h5v5a3 3 0 1 0 0 6v5h-5a3 3 0 1 0-6 0H4v-5a3 3 0 1 1 0-6Z"/>',
+    chart: '<path d="M4 3v17h17M8 16v-5m5 5V7m5 9V4"/>',
+    pen: '<path d="m16 3 5 5-12 12-6 1 1-6Zm-10 13 3 3M14 5l5 5"/>',
+    github:
+      '<path d="M9 19c-4 1-4-2-6-2m12 5v-3.4a3 3 0 0 0-.8-2.3c2.7-.3 5.6-1.3 5.6-6A4.7 4.7 0 0 0 18.5 7a4.3 4.3 0 0 0-.1-3.3S17.3 3.4 15 5a12 12 0 0 0-6 0C6.7 3.4 5.6 3.7 5.6 3.7A4.3 4.3 0 0 0 5.5 7a4.7 4.7 0 0 0-1.3 3.3c0 4.7 2.9 5.7 5.6 6a3 3 0 0 0-.8 2.3V22"/>',
+    search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+    arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
+    external:
+      '<path d="M14 3h7v7m0-7L11 13m-1-8H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
+    refresh:
+      '<path d="M20 7a8 8 0 0 0-14-2L3 8m0-5v5h5m-4 9a8 8 0 0 0 14 2l3-3m0 5v-5h-5"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+    moon: '<path d="M21 13a9 9 0 0 1-10-10 9 9 0 1 0 10 10Z"/>',
+    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    close: '<path d="m6 6 12 12M6 18 18 6"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    list: '<path d="M9 5h12M9 12h12M9 19h12M3 5h.01M3 12h.01M3 19h.01"/>',
+    link: '<path d="m10 13 4-4M8 16l-1 1a3.5 3.5 0 0 1-5-5l5-5a3.5 3.5 0 0 1 5 0m0 10a3.5 3.5 0 0 0 5 0l5-5a3.5 3.5 0 0 0-5-5l-1 1"/>',
+    star: '<path d="m12 3 2.8 5.8 6.4.9-4.6 4.5 1.1 6.4-5.7-3-5.7 3 1.1-6.4L2.8 9.7l6.4-.9Z"/>',
+    shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Zm-4 9 3 3 5-6"/>',
+    check: '<path d="m5 12 4 4L19 6"/>',
+    sparkles:
+      '<path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8ZM20 2v4m-2-2h4M3 19v4m-2-2h4"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    cloud:
+      '<path d="M6 18a5 5 0 0 1-1-10 7 7 0 0 1 13-1 5.5 5.5 0 0 1 0 11ZM9 12l6 6m0-6-6 6"/>',
+    download: '<path d="M12 3v12m-5-5 5 5 5-5M4 15v5h16v-5"/>',
+    upload: '<path d="M12 16V4m-5 5 5-5 5 5M4 15v5h16v-5"/>',
+    copy: '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',
+  };
+  function icon(name) {
+    return (
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      (PATHS[name] || PATHS.grid) +
+      "</svg>"
+    );
+  }
+  function hydrateIcons(root) {
+    (root || document).querySelectorAll("[data-icon]").forEach(function (el) {
+      el.innerHTML = icon(el.dataset.icon);
     });
+  }
+  function readStore(key, fallback) {
+    try {
+      var value = JSON.parse(localStorage.getItem(key));
+      return value == null ? fallback : value;
+    } catch (_) {
+      return fallback;
+    }
+  }
+  function writeStore(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  var profile = readStore("skillatlas-profile", {});
+  if (!profile || typeof profile !== "object") profile = {};
+  var storedSaved = readStore("skillatlas-saved", []);
+  var saved = new Map();
+  if (Array.isArray(storedSaved))
+    storedSaved.slice(0, 5000).forEach(function (item) {
+      var skill = C.normalize(item);
+      if (skill) saved.set(skill.id.toLowerCase(), skill);
+    });
+  var state = {
+    snapshot: [],
+    skills: [],
+    meta: {},
+    view: "discover",
+    q: "",
+    cat: "",
+    sort: "recommended",
+    language: "",
+    verifiedOnly: false,
+    skillOnly: false,
+    page: 1,
+    rank: "trend",
+    goal: owns(C.GOALS, profile.goal) ? profile.goal : "all",
+    layout: profile.layout === "list" ? "list" : "grid",
+    dailyOffset: 0,
+    live: [],
+    lastSync: 0,
+    syncBusy: false,
+    detailId: null,
+    ready: false,
   };
-  var num = function (n) {
-    n = Number(n || 0);
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-    return String(n);
-  };
-  /* Exact counts with separators, so headline numbers never disagree with the list. */
-  var exact = function (n) { return Number(n || 0).toLocaleString('en-US'); };
-  var GOALS = {
-    build: ['编程开发', 'Agent 框架', '集成连接', '数据科学'],
-    research: ['科研学术', '数据科学', '生物医药', '写作内容'],
-    create: ['设计创意', '写作内容', '文档办公', '浏览器自动化'],
-    automate: ['浏览器自动化', '效率工具', '集成连接', 'Agent 框架']
-  };
+  var lookup = new Map(),
+    fileCache = new Map(),
+    searchTimer,
+    toastTimer,
+    detailRequest;
+  var previousFocus;
+  var sharedRequest;
+  function exact(n) {
+    return Number(n || 0).toLocaleString("en-US");
+  }
+  function compact(n) {
+    return n >= 1000000
+      ? (n / 1000000).toFixed(1) + "m"
+      : n >= 1000
+        ? (n / 1000).toFixed(1) + "k"
+        : String(n || 0);
+  }
+  function dateLabel(iso) {
+    var date = new Date(iso);
+    return Number.isFinite(date.getTime())
+      ? date.toLocaleDateString("zh-CN", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        })
+      : "日期未知";
+  }
   function ago(iso) {
-    if (!iso) return '—';
-    var days = (Date.now() - new Date(iso).getTime()) / 86400000;
-    if (days < 1) return '今天';
-    if (days < 30) return Math.round(days) + ' 天前';
-    if (days < 365) return Math.round(days / 30) + ' 个月前';
-    return (days / 365).toFixed(1) + ' 年前';
+    var days = Math.max(0, (Date.now() - Date.parse(iso)) / 86400000);
+    if (!Number.isFinite(days)) return "日期未知";
+    if (days < 1) return "今天";
+    if (days < 30) return Math.floor(days) + " 天前";
+    if (days < 365) return Math.floor(days / 30) + " 个月前";
+    return Math.floor(days / 365) + " 年前";
   }
-  function toast(msg) {
-    var el = $('#toast');
-    el.textContent = msg;
-    el.classList.add('show');
-    clearTimeout(window.__t);
-    window.__t = setTimeout(function () { el.classList.remove('show'); }, 2200);
+  function toast(message) {
+    clearTimeout(toastTimer);
+    var dialogStatus = $("#detailStatus");
+    if (dialogStatus) dialogStatus.hidden = true;
+    $("#toast").classList.remove("show");
+    var target =
+      $("#detailDialog").open && dialogStatus ? dialogStatus : $("#toast");
+    target.textContent = message;
+    target.hidden = false;
+    target.classList.add("show");
+    toastTimer = setTimeout(function () {
+      target.classList.remove("show");
+      if (target === dialogStatus) target.hidden = true;
+    }, 2800);
   }
-  function avatar(skill, size) {
-    var src = skill.avatar ? ' src="' + esc(skill.avatar) + '" loading="lazy"' : '';
-    var style = size ? ' style="width:' + size + 'px;height:' + size + 'px"' : '';
-    return '<img' + src + style + ' alt="" onerror="this.style.visibility=\'hidden\'" />';
+  function avatar(skill, small) {
+    var url = C.safeUrl(skill.avatar);
+    return (
+      '<span class="repo-avatar' +
+      (small ? " small" : "") +
+      '"><span aria-hidden="true">' +
+      esc(skill.owner.charAt(0).toUpperCase()) +
+      "</span>" +
+      (url
+        ? '<img src="' +
+          esc(url) +
+          '" alt="" loading="lazy" referrerpolicy="no-referrer" />'
+        : "") +
+      "</span>"
+    );
   }
-  function saveProfile() { localStorage.setItem('skillatlas-profile', JSON.stringify({ goal: state.goal, pref: state.pref })); }
-  function categoryFor(text) {
-    text = String(text || '').toLowerCase();
-    if (/browser|playwright|selenium|scrap|crawl/.test(text)) return '浏览器自动化';
-    if (/research|paper|arxiv|literature|citation/.test(text)) return '科研学术';
-    if (/design|figma|image|video|creative|ui|ux/.test(text)) return '设计创意';
-    if (/mcp|integration|connector|notion|slack/.test(text)) return '集成连接';
-    if (/agent|claude|codex|framework|skill/.test(text)) return 'Agent 框架';
-    if (/data|sql|analytics|visual/.test(text)) return '数据科学';
-    return '编程开发';
+  // Image failure keeps the locally rendered initial visible, including offline.
+  document.addEventListener(
+    "error",
+    function (event) {
+      if (event.target.tagName === "IMG") event.target.hidden = true;
+    },
+    true,
+  );
+  function isSaved(id) {
+    return saved.has(id.toLowerCase());
   }
-  function personalScore(skill) {
-    var score = 0;
-    if (skill.category === state.pref) score += 44;
-    if ((GOALS[state.goal] || []).indexOf(skill.category) !== -1) score += 26;
-    if (skill.verified) score += 12;
-    if (skill.skillSignal) score += 8;
-    var pushed = skill.pushedAt ? (Date.now() - new Date(skill.pushedAt).getTime()) / 86400000 : 365;
-    score += Math.max(0, 10 - pushed / 5);
-    return Math.round(score);
+  function saveButton(skill) {
+    var active = isSaved(skill.id);
+    return (
+      '<button class="icon-button save-button' +
+      (active ? " saved" : "") +
+      '" data-save="' +
+      esc(skill.id) +
+      '" aria-pressed="' +
+      active +
+      '" aria-label="' +
+      (active ? "取消收藏 " : "收藏 ") +
+      esc(skill.name) +
+      '" title="' +
+      (active ? "取消收藏" : "收藏到工具箱") +
+      '">' +
+      icon("bookmark") +
+      "</button>"
+    );
   }
-
-  /* ---------- data ---------- */
-  function loadData() {
-    if (window.SKILL_DATA && window.SKILL_DATA.skills && window.SKILL_DATA.skills.length) {
-      return Promise.resolve(window.SKILL_DATA);
-    }
-    return fetch('data/skills.json')
-      .then(function (r) { return r.json(); })
-      .catch(function () { return null; });
+  function badge(skill) {
+    return skill.verified
+      ? '<span class="tag verified" title="仅核验文件存在性，不代表质量或安全审查">' +
+          icon("check") +
+          " " +
+          exact(skill.skillCount) +
+          " 个技能文件</span>"
+      : '<span class="tag">' +
+          (skill.skillCount === 0 ? "未发现 SKILL.md" : "文件待核验") +
+          "</span>";
   }
-
-  function sortSkills(list, sort) {
-    var copy = list.slice();
-    if (sort === 'stars') copy.sort(function (a, b) { return b.stars - a.stars; });
-    else if (sort === 'recent') copy.sort(function (a, b) { return new Date(b.pushedAt) - new Date(a.pushedAt); });
-    else if (sort === 'new') copy.sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
-    else if (sort === 'skills') copy.sort(function (a, b) { return (b.skillCount || 0) - (a.skillCount || 0) || b.stars - a.stars; });
-    else if (sort === 'name') copy.sort(function (a, b) { return a.fullName.toLowerCase().localeCompare(b.fullName.toLowerCase()); });
-    else copy.sort(function (a, b) { return (b.trendScore || 0) - (a.trendScore || 0); });
-    return copy;
-  }
-  function recommendedSkills() {
-    return state.data.skills.slice().sort(function (a, b) {
-      return personalScore(b) - personalScore(a) || (b.trendScore || 0) - (a.trendScore || 0);
-    });
-  }
-  function renderProfile() {
-    var goalNames = { build: '构建产品', research: '做研究', create: '做内容', automate: '自动化' };
-    document.querySelectorAll('[data-goal]').forEach(function (el) { el.classList.toggle('active', el.getAttribute('data-goal') === state.goal); });
-    document.querySelectorAll('[data-pref]').forEach(function (el) { el.classList.toggle('active', el.getAttribute('data-pref') === state.pref); });
-    $('#preferenceSummary').textContent = '正在为「' + goalNames[state.goal] + '」筛选，优先推荐「' + state.pref + '」方向的活跃 Skills。';
-    var score = Math.min(98, 58 + Math.round((recommendedSkills()[0] ? personalScore(recommendedSkills()[0]) : 0) / 2));
-    $('#personalScore').textContent = score;
-    document.querySelector('.why-meter i').style.width = score + '%';
-  }
-
-  function renderFresh() {
-    var now = Date.now();
-    var all = state.live.concat(state.data.skills).filter(function (s, index, arr) { return arr.findIndex(function (x) { return x.id === s.id; }) === index; });
-    var list = all.slice().sort(function (a, b) {
-      var af = a.pushedAt ? new Date(a.pushedAt).getTime() : 0;
-      var bf = b.pushedAt ? new Date(b.pushedAt).getTime() : 0;
-      var ap = personalScore(a), bp = personalScore(b);
-      return (bf - af) * .6 + (bp - ap) * 86400000 * 3;
-    }).slice(0, 5);
-    $('#freshFeed').innerHTML = list.map(function (s, i) {
-      var hours = s.pushedAt ? Math.max(1, Math.round((now - new Date(s.pushedAt).getTime()) / 3600000)) : 0;
-      var freshness = hours < 24 ? '今天更新' : hours < 168 ? Math.round(hours / 24) + ' 天内更新' : ago(s.pushedAt);
-      var delta = s.starsPerDay ? '+' + Math.max(1, Math.round(s.starsPerDay)) + '★/日' : '新信号';
-      return '<article class="fresh-item reveal" data-id="' + esc(s.id) + '">' +
-        '<span class="fresh-dot"></span><div class="fresh-main"><b>' + esc(s.name) + '</b><small>' + esc(s.fullName) + ' · ' + esc(s.category) + '</small><p>' + esc(s.description || '作者未填写描述。') + '</p></div>' +
-        '<div class="fresh-delta"><strong>' + delta + '</strong><small>' + freshness + '</small></div></article>';
-    }).join('');
-  }
-  function renderPulse(status, extra) {
-    var text = $('#pulseText');
-    if (status === 'loading') { text.textContent = '正在读取 GitHub 公开信号…'; return; }
-    if (status === 'ok') {
-      text.textContent = '刚刚同步 · 公开 GitHub API';
-      $('#pulseNew').textContent = '+' + (extra.newCount || 0);
-      $('#pulseHot').textContent = extra.hot || '活跃';
-      $('#pulseLatency').textContent = (extra.latency || 0) + 'ms';
-      return;
-    }
-    if (status === 'offline') { text.textContent = '实时通道暂不可用 · 正在使用本地快照'; $('#pulseNew').textContent = '快照'; $('#pulseHot').textContent = '可用'; $('#pulseLatency').textContent = '—'; return; }
-    var meta = state.data.meta;
-    text.textContent = '快照生成于 ' + new Date(meta.generatedAt).toLocaleString('zh-CN', { hour12: false });
-    $('#pulseNew').textContent = '—'; $('#pulseHot').textContent = '待同步'; $('#pulseLatency').textContent = '—';
-  }
-  function normalizeLiveRepo(repo) {
-    var text = [repo.name, repo.full_name, repo.description, (repo.topics || []).join(' ')].join(' ');
-    var ageDays = Math.max(1, (Date.now() - new Date(repo.created_at || Date.now()).getTime()) / 86400000);
-    var category = categoryFor(text);
-    return { id: repo.full_name, name: repo.name, owner: (repo.owner || {}).login || repo.full_name.split('/')[0], fullName: repo.full_name, url: repo.html_url, homepage: repo.homepage || '', description: repo.description || '', category: category, topics: repo.topics || [], language: repo.language || '', license: (repo.license || {}).spdx_id || '', stars: repo.stargazers_count || 0, forks: repo.forks_count || 0, createdAt: repo.created_at, pushedAt: repo.pushed_at, ageDays: ageDays, starsPerDay: (repo.stargazers_count || 0) / ageDays, verified: false, skillSignal: /skill|claude|agent|mcp|codex/i.test(text), skillCount: null, trendScore: (repo.stargazers_count || 0) * .45 + (repo.stargazers_count || 0) / ageDays * 55, avatar: (repo.owner || {}).avatar_url || '', live: true };
-  }
-  function syncGitHub() {
-    var btn = $('#syncNow');
-    btn.classList.add('is-loading'); btn.disabled = true; state.liveStatus = 'loading'; renderPulse('loading');
-    var began = performance.now();
-    var q = state.goal === 'research' ? 'research agent skills' : state.goal === 'create' ? 'creative AI skills' : state.goal === 'automate' ? 'automation agent skills' : 'claude skills';
-    var endpoint = 'https://api.github.com/search/repositories?q=' + encodeURIComponent(q + ' fork:false') + '&sort=updated&order=desc&per_page=12';
-    fetch(endpoint, { headers: { 'Accept': 'application/vnd.github+json' } })
-      .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(function (payload) {
-        state.live = (payload.items || []).map(normalizeLiveRepo);
-        var known = state.data.skills.reduce(function (m, s) { m[s.id] = 1; return m; }, {});
-        var newCount = state.live.filter(function (s) { return !known[s.id]; }).length;
-        var hottest = state.live.slice().sort(function (a, b) { return b.starsPerDay - a.starsPerDay; })[0];
-        renderFresh(); renderPulse('ok', { newCount: newCount, hot: hottest ? '+' + Math.round(hottest.starsPerDay) + '★/日' : '活跃', latency: Math.round(performance.now() - began) });
-        toast('已同步 ' + state.live.length + ' 个 GitHub 实时信号');
-      })
-      .catch(function () { renderPulse('offline'); toast('GitHub 暂未响应，保留本地快照'); })
-      .finally(function () { btn.classList.remove('is-loading'); btn.disabled = false; });
-  }
-
-  /* ---------- render ---------- */
-  function renderStats(meta, skills) {
-    var verified = skills.filter(function (s) { return s.verified; });
-    var counted = skills.reduce(function (sum, s) { return sum + (s.skillCount || 0); }, 0);
-    var cats = Object.keys(meta.categoryCounts || {}).length;
-    var stars = skills.reduce(function (sum, s) { return sum + (s.stars || 0); }, 0);
-    $('#stats').innerHTML = [
-      ['收录仓库', exact(skills.length), '已过滤非 AI 仓库 ' + exact(meta.reposFilteredOut || 0) + ' 个'],
-      ['已核验仓库', exact(verified.length), '占收录 ' + (skills.length ? Math.round(verified.length / skills.length * 100) : 0) + '%'],
-      ['发现技能文件', exact(counted), 'GitHub 文件树 + 镜像索引核验'],
-      ['Skills 仓库', exact(meta.skillSignalRepos || 0), '名称/描述/topic 含 skill'],
-      ['覆盖分类', String(cats), '自动归类'],
-      ['累计星标', num(stars), '采集时快照']
-    ].map(function (row) {
-      return '<div class="stat"><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong><small>' + esc(row[2]) + '</small></div>';
-    }).join('');
-  }
-
-  function card(skill) {
-    var facts = [
-      '<span class="fact">★ ' + num(skill.stars) + '</span>',
-      '<span class="fact">' + esc(skill.category) + '</span>'
+  function card(skill, featured, index) {
+    var goal = C.GOALS[state.goal],
+      relevant = goal.categories.indexOf(skill.category) !== -1;
+    var reasons = [
+      relevant ? "与你的目标有关" : "从这里开始探索",
+      "把好工具加入日常",
+      "留一点空间给灵感",
     ];
-    if (skill.verified) facts.push('<span class="fact ok">✓ ' + skill.skillCount + ' SKILL.md</span>');
-    facts.push('<span class="fact">更新 ' + ago(skill.pushedAt) + '</span>');
-    return '<article class="card" data-id="' + esc(skill.id) + '">' +
-      '<div class="who">' + avatar(skill) +
-        '<div><b>' + esc(skill.name) + '</b><small>' + esc(skill.fullName) + '</small></div>' +
-      '</div>' +
-      '<p>' + esc(skill.description || '作者未填写描述。') + '</p>' +
-      '<div class="facts">' + facts.join('') + '</div>' +
-      '</article>';
+    return (
+      '<article class="skill-card' +
+      (featured ? " featured-card" : "") +
+      '">' +
+      (featured
+        ? '<div class="featured-label">' +
+          icon(index === 0 ? "sparkles" : index === 1 ? "layers" : "compass") +
+          esc(reasons[index]) +
+          "</div>"
+        : "") +
+      '<div class="card-top">' +
+      avatar(skill) +
+      '<div class="card-name"><button class="card-title" data-open="' +
+      esc(skill.id) +
+      '" title="' +
+      esc(skill.name) +
+      '">' +
+      esc(skill.name) +
+      '</button><span class="card-owner">' +
+      esc(skill.owner) +
+      "</span></div></div>" +
+      saveButton(skill) +
+      '<p class="card-description" title="' +
+      esc(skill.description) +
+      '">' +
+      esc(skill.description || "作者还没有填写描述。打开仓库了解更多。") +
+      "</p>" +
+      '<div class="card-tags"><button class="tag" data-category="' +
+      esc(skill.category) +
+      '">' +
+      esc(skill.category) +
+      "</button>" +
+      badge(skill) +
+      (skill.archived ? '<span class="tag archived">已归档</span>' : "") +
+      "</div>" +
+      '<div class="card-footer"><span class="star-count" title="' +
+      exact(skill.stars) +
+      ' 个星标">' +
+      icon("star") +
+      compact(skill.stars) +
+      "</span><span>" +
+      (skill.live ? "刚刚同步" : "更新于 " + ago(skill.pushedAt)) +
+      '</span><button class="card-open" data-open="' +
+      esc(skill.id) +
+      '" aria-label="了解 ' +
+      esc(skill.name) +
+      '">了解更多 ' +
+      icon("arrow") +
+      "</button></div></article>"
+    );
   }
-
-  function renderDaily() {
-    var pool = recommendedSkills().filter(function (s) { return s.verified; });
-    if (pool.length < 3) pool = state.data.skills;
-    /* Rotate deterministically by calendar day so "today" really changes each day. */
-    var dayIndex = Math.floor(Date.now() / 86400000);
-    var span = Math.max(pool.length - 2, 1);
-    var start = ((dayIndex + state.dailyOffset * 3) % span + span) % span;
-    var picks = pool.slice(start, start + 3);
-    if (picks.length < 3) picks = picks.concat(pool.slice(0, 3 - picks.length));
-    $('#dailyGrid').innerHTML = picks.map(function (s, i) {
-      var facts = ['<span class="fact">★ ' + num(s.stars) + '</span>', '<span class="fact">' + esc(s.category) + '</span>'];
-      facts.push(s.verified
-        ? '<span class="fact ok">✓ ' + s.skillCount + ' SKILL.md</span>'
-        : '<span class="fact">待核验</span>');
-      return '<article class="daily-card">' +
-        '<span class="daily-tag">PICK ' + (i + 1) + '</span>' +
-        '<div class="who">' + avatar(s) + '<div><b>' + esc(s.name) + '</b><small>' + esc(s.owner) + '</small></div></div>' +
-        '<p>' + esc(s.description || '作者未填写描述。') + '</p>' +
-        '<div class="facts">' + facts.join('') + '<span class="fact ok">匹配 ' + personalScore(s) + '%</span></div>' +
-        '<div class="daily-actions">' +
-          '<button class="btn primary" data-open="' + esc(s.id) + '">查看详情</button>' +
-          '<a class="btn" href="' + esc(s.url) + '" target="_blank" rel="noopener">GitHub ↗</a>' +
-        '</div></article>';
-    }).join('');
-    var day = new Date().toISOString().slice(0, 10);
-    $('#dailyNote').textContent = '按日期轮换 · ' + day + ' · 优先展示已核验 Skills';
-  }
-
-  function renderRanking() {
-    var list = sortSkills(state.data.skills, state.rank).slice(0, 12);
-    var rows = list.map(function (s, i) {
-      var rank = i + 1;
-      var cls = rank === 1 ? 'top1' : rank === 2 ? 'top2' : rank === 3 ? 'top3' : '';
-      return '<div class="rank-row" data-id="' + esc(s.id) + '">' +
-        '<span class="rk ' + cls + '">' + (rank < 10 ? '0' + rank : rank) + '</span>' +
-        '<span class="rname">' + avatar(s) + '<span><b>' + esc(s.name) + '</b><small>' + esc(s.fullName) + '</small></span></span>' +
-        '<span class="num col-stars">★ ' + num(s.stars) + '</span>' +
-        '<span class="num col-skill">' + (s.verified ? '✓ ' + s.skillCount : '—') + '</span>' +
-        '<span class="num col-updated">' + ago(s.pushedAt) + '</span>' +
-        '<span class="cat-pill">' + esc(s.category) + '</span>' +
-        '</div>';
-    }).join('');
-    $('#rankTable').innerHTML =
-      '<div class="rank-row head"><span>#</span><span>仓库</span><span class="col-stars">Stars</span>' +
-      '<span class="col-skill">SKILL.md</span><span class="col-updated">更新</span><span class="cat-pill">分类</span></div>' + rows;
-  }
-
-  function renderCategories() {
-    var counts = state.data.meta.categoryCounts || {};
-    var entries = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
-    $('#catGrid').innerHTML = entries.map(function (name) {
-      var color = CAT_COLOR[name] || '#6b7280';
-      return '<button class="cat-tile" data-cat="' + esc(name) + '" style="--c:' + color + '">' +
-        '<span class="dot"></span><b>' + esc(name) + '</b><small>' + counts[name] + ' repos</small></button>';
-    }).join('');
-    var chips = ['全部'].concat(entries);
-    $('#catChips').innerHTML = chips.map(function (name) {
-      var count = name === '全部' ? state.data.skills.length : counts[name];
-      return '<button class="chip' + (state.cat === name ? ' active' : '') + '" data-cat="' + esc(name) + '">' +
-        esc(name) + '<i>' + count + '</i></button>';
-    }).join('');
-  }
-
-  function filtered() {
-    var q = state.q.trim().toLowerCase();
-    var list = state.data.skills.filter(function (s) {
-      if (state.verifiedOnly && !s.verified) return false;
-      if (state.skillOnly && !s.skillSignal) return false;
-      if (state.cat !== '全部' && s.category !== state.cat) return false;
-      if (!q) return true;
-      return [s.name, s.fullName, s.description, s.category, s.owner, (s.topics || []).join(' '), s.language]
-        .join(' ').toLowerCase().indexOf(q) !== -1;
+  function rebuildIndex() {
+    state.skills = C.mergeSkills(state.snapshot, state.live);
+    lookup = new Map(
+      state.skills.map(function (skill) {
+        return [skill.id.toLowerCase(), skill];
+      }),
+    );
+    saved.forEach(function (skill, id) {
+      if (!lookup.has(id)) lookup.set(id, skill);
     });
-    if (state.sort === 'personal') return list.sort(function (a, b) { return personalScore(b) - personalScore(a) || (b.trendScore || 0) - (a.trendScore || 0); });
-    return sortSkills(list, state.sort);
   }
-
-  function renderBrowse() {
-    var list = filtered();
+  function getSkill(id) {
+    return typeof id === "string" ? lookup.get(id.toLowerCase()) : null;
+  }
+  function categoryCounts(list) {
+    var counts = {};
+    list.forEach(function (s) {
+      counts[s.category] = (counts[s.category] || 0) + 1;
+    });
+    return counts;
+  }
+  function persistProfile() {
+    writeStore("skillatlas-profile", {
+      goal: state.goal,
+      layout: state.layout,
+    });
+  }
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    $("#themeToggle").innerHTML = icon(theme === "dark" ? "moon" : "sun");
+    $("#themeToggle").setAttribute(
+      "aria-label",
+      theme === "dark" ? "切换浅色外观" : "切换深色外观",
+    );
+  }
+  function setMobileMenu(open) {
+    $("#sidebar").classList.toggle("is-open", open);
+    $("#sidebarBackdrop").hidden = !open;
+    $("#menuButton").setAttribute("aria-expanded", String(open));
+    document.body.style.overflow = open ? "hidden" : "";
+    $("#sidebar").inert = window.innerWidth <= 760 && !open;
+    $("#content").inert = open;
+    if (open) $("#sidebar .brand").focus();
+  }
+  function currentUrl(detailId) {
+    var url = new URL(location.href);
+    url.search = "";
+    url.hash = "";
+    if (state.view !== "discover") url.searchParams.set("view", state.view);
+    if (state.q) url.searchParams.set("q", state.q);
+    if (state.cat) url.searchParams.set("cat", state.cat);
+    if (state.language) url.searchParams.set("lang", state.language);
+    if (state.verifiedOnly) url.searchParams.set("verified", "1");
+    if (state.skillOnly) url.searchParams.set("skills", "1");
+    if (state.sort !== "recommended") url.searchParams.set("sort", state.sort);
+    if (state.goal !== "all") url.searchParams.set("goal", state.goal);
+    if (state.view === "ranking" && state.rank !== "trend")
+      url.searchParams.set("rank", state.rank);
+    if (detailId) url.searchParams.set("skill", detailId);
+    return url;
+  }
+  function syncUrl(push) {
+    try {
+      history[push ? "pushState" : "replaceState"](
+        {},
+        "",
+        currentUrl(state.detailId),
+      );
+    } catch (_) {}
+  }
+  function readUrl() {
+    var p = new URLSearchParams(location.search);
+    state.q = (p.get("q") || "").slice(0, 300);
+    state.cat = owns(C.CATEGORIES, p.get("cat")) ? p.get("cat") : "";
+    state.language = p.get("lang") || "";
+    state.verifiedOnly = p.get("verified") === "1";
+    state.skillOnly = p.get("skills") === "1";
+    state.sort =
+      ["recommended", "stars", "recent", "new", "skills", "name"].indexOf(
+        p.get("sort"),
+      ) !== -1
+        ? p.get("sort")
+        : "recommended";
+    state.rank =
+      ["trend", "stars", "recent", "skills"].indexOf(p.get("rank")) !== -1
+        ? p.get("rank")
+        : "trend";
+    if (owns(C.GOALS, p.get("goal"))) state.goal = p.get("goal");
+    state.view = owns(VIEWS, p.get("view"))
+      ? p.get("view")
+      : state.q ||
+          state.cat ||
+          state.language ||
+          state.verifiedOnly ||
+          state.skillOnly
+        ? "browse"
+        : "discover";
+    state.page = 1;
+    return p.get("skill");
+  }
+  function resetFilters() {
+    state.q = "";
+    state.cat = "";
+    state.language = "";
+    state.verifiedOnly = false;
+    state.skillOnly = false;
+    state.sort = "recommended";
+    state.page = 1;
+  }
+  function navigate(view, reset) {
+    if (!state.ready || !owns(VIEWS, view)) return;
+    clearTimeout(searchTimer);
+    var changed = state.view !== view;
+    if (reset) resetFilters();
+    state.view = view;
+    state.page = 1;
+    setMobileMenu(false);
+    renderCurrent();
+    syncUrl(changed);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  function renderChrome() {
+    var counts = categoryCounts(state.skills);
+    $("#navTotal").textContent = exact(state.skills.length);
+    $("#savedCount").textContent = exact(saved.size);
+    $("#viewLabel").textContent = VIEWS[state.view];
+    document.title = VIEWS[state.view] + " · SkillAtlas";
+    document
+      .querySelectorAll(".sidebar [data-view]")
+      .forEach(function (button) {
+        var active = button.dataset.view === state.view;
+        button.classList.toggle("active", active);
+        if (active) button.setAttribute("aria-current", "page");
+        else button.removeAttribute("aria-current");
+      });
+    $("#categoryNav").innerHTML = [
+      "编程开发",
+      "设计创意",
+      "效率工具",
+      "科研学术",
+      "文档办公",
+      "浏览器自动化",
+    ]
+      .map(function (cat) {
+        return (
+          '<button data-category="' +
+          cat +
+          '" class="' +
+          (state.cat === cat && state.view === "browse" ? "active" : "") +
+          '"><span class="cat-bullet" style="--cat:' +
+          C.CATEGORIES[cat].color +
+          '"></span>' +
+          cat +
+          "</button>"
+        );
+      })
+      .join("");
+    $("#searchInput").value = state.q;
+    $("#footerStamp").textContent =
+      "数据快照 " + dateLabel(state.meta.generatedAt);
+    $("#goalChoices").innerHTML = Object.keys(C.GOALS)
+      .map(function (key) {
+        return (
+          '<button class="intent-option' +
+          (state.goal === key ? " active" : "") +
+          '" data-goal="' +
+          key +
+          '" aria-pressed="' +
+          (state.goal === key) +
+          '">' +
+          icon(C.GOALS[key].icon) +
+          C.GOALS[key].label +
+          "</button>"
+        );
+      })
+      .join("");
+    return counts;
+  }
+  function renderDiscover() {
+    var counted = state.snapshot.reduce(function (sum, s) {
+      return sum + (s.skillCount || 0);
+    }, 0);
+    $("#heroProof").innerHTML =
+      icon("shield") +
+      "<b>" +
+      exact(state.snapshot.length) +
+      "</b> 个开源仓库 <span>·</span> <b>" +
+      exact(counted) +
+      "</b> 个已发现技能文件";
+    var age = Math.max(
+      0,
+      Math.floor((Date.now() - Date.parse(state.meta.generatedAt)) / 86400000),
+    );
+    $("#snapshotLabel").textContent =
+      "数据快照 " +
+      dateLabel(state.meta.generatedAt) +
+      (Number.isFinite(age) && age > 1 ? " · " + age + " 天前采集" : "") +
+      (state.live.length ? " · 已合并本次同步" : "");
+    $("#recommendNote").textContent =
+      state.goal === "all"
+        ? "从已发现 SKILL.md 的仓库里，为你挑选。"
+        : "围绕「" +
+          C.GOALS[state.goal].label +
+          "」挑选，优先展示已发现技能文件的仓库。";
+    var picks = C.dailyPicks(state.skills, state.goal, state.dailyOffset);
+    $("#featuredGrid").innerHTML = picks.length
+      ? picks
+          .map(function (s, i) {
+            return card(s, true, i);
+          })
+          .join("")
+      : '<p class="empty-state">暂时没有已核验的推荐，试试探索全部仓库。</p>';
+    var counts = categoryCounts(state.skills);
+    $("#categoryGrid").innerHTML = [
+      "编程开发",
+      "设计创意",
+      "文档办公",
+      "科研学术",
+      "浏览器自动化",
+      "Agent 框架",
+      "数据科学",
+      "集成连接",
+    ]
+      .map(function (name) {
+        var cat = C.CATEGORIES[name];
+        return (
+          '<button class="category-tile" data-category="' +
+          name +
+          '"><span class="category-icon" style="--cat:' +
+          cat.color +
+          ";--cat-bg:" +
+          cat.bg +
+          '">' +
+          icon(cat.icon) +
+          "</span><span><b>" +
+          name +
+          "</b><small>" +
+          exact(counts[name] || 0) +
+          " 个开源仓库</small></span>" +
+          icon("arrow") +
+          "</button>"
+        );
+      })
+      .join("");
+    $("#recentList").innerHTML = C.sortSkills(
+      state.skills.filter(function (s) {
+        return !s.archived;
+      }),
+      "recent",
+    )
+      .slice(0, 4)
+      .map(function (s) {
+        return (
+          '<article class="recent-row">' +
+          avatar(s, true) +
+          '<div class="recent-copy"><button data-open="' +
+          esc(s.id) +
+          '">' +
+          esc(s.name) +
+          "</button><small>" +
+          esc(s.owner) +
+          '</small></div><span class="tag">' +
+          esc(s.category) +
+          "</span><span>" +
+          ago(s.pushedAt) +
+          '更新</span><button data-open="' +
+          esc(s.id) +
+          '" aria-label="查看 ' +
+          esc(s.name) +
+          '">' +
+          icon("arrow") +
+          "</button></article>"
+        );
+      })
+      .join("");
+  }
+  function renderCatalog() {
+    var isCollection = state.view === "saved";
+    $("#catalogTitle").textContent = isCollection
+      ? "好工具，留给下一次灵感"
+      : "一整个世界的可能";
+    $("#catalogEyebrow").textContent = isCollection
+      ? "YOUR LITTLE TOOLBOX"
+      : "THE SKILLS LIBRARY";
+    $("#catalogIntro").textContent = isCollection
+      ? "属于你的工具箱，收藏保存在当前浏览器。"
+      : "找到适合你的工具，把精力留给创造。";
+    var source = isCollection
+      ? Array.from(saved.values()).map(function (skill) {
+          return getSkill(skill.id) || skill;
+        })
+      : state.skills;
+    var counts = categoryCounts(source);
+    $("#categoryChips").innerHTML = [""]
+      .concat(
+        Object.keys(C.CATEGORIES).filter(function (name) {
+          return counts[name] || state.cat === name;
+        }),
+      )
+      .map(function (name) {
+        return (
+          '<button class="category-chip' +
+          (state.cat === name ? " active" : "") +
+          '" data-filter-cat="' +
+          name +
+          '" aria-pressed="' +
+          (state.cat === name) +
+          '">' +
+          (name || "全部") +
+          "<span>" +
+          exact(name ? counts[name] || 0 : source.length) +
+          "</span></button>"
+        );
+      })
+      .join("");
+    var languages = Array.from(
+      new Set(
+        source
+          .map(function (s) {
+            return s.language;
+          })
+          .filter(Boolean),
+      ),
+    ).sort();
+    if (state.language && languages.indexOf(state.language) === -1)
+      languages.push(state.language);
+    $("#languageSelect").innerHTML =
+      '<option value="">全部语言</option>' +
+      languages
+        .map(function (lang) {
+          return '<option value="' + esc(lang) + '">' + esc(lang) + "</option>";
+        })
+        .join("");
+    $("#languageSelect").value = state.language;
+    $("#sortSelect").value = state.sort;
+    $("#verifiedOnly").checked = state.verifiedOnly;
+    $("#skillOnly").checked = state.skillOnly;
+    $("#queryNote").hidden = !state.q;
+    $("#queryNote").innerHTML = "正在寻找：<b>" + esc(state.q) + "</b>";
+    var list = C.filterSkills(source, state);
     var shown = list.slice(0, state.page * PAGE_SIZE);
-    $('#cards').innerHTML = shown.length
-      ? shown.map(card).join('')
-      : '<div class="empty">没有匹配的 Skill，试试其它关键词或清除筛选。</div>';
-    $('#browseNote').textContent = '匹配 ' + list.length + ' 个仓库，已显示 ' + shown.length + ' 个';
-    var more = $('#loadMore');
-    more.disabled = shown.length >= list.length;
-    more.textContent = more.disabled ? '已显示全部' : '加载更多（剩余 ' + (list.length - shown.length) + '）';
+    $("#resultsCount").innerHTML =
+      "找到 <b>" +
+      exact(list.length) +
+      "</b> 个" +
+      (isCollection ? "收藏" : "仓库");
+    var grid = $("#catalogGrid");
+    grid.classList.toggle("list-layout", state.layout === "list");
+    document.querySelectorAll("[data-layout]").forEach(function (button) {
+      var active = button.dataset.layout === state.layout;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    grid.innerHTML = shown.length
+      ? shown
+          .map(function (s) {
+            return card(s, false);
+          })
+          .join("")
+      : '<div class="empty-state"><span class="empty-icon">' +
+        icon(isCollection && !saved.size ? "bookmark" : "search") +
+        "</span><h2>" +
+        (isCollection && !saved.size
+          ? "把下一次灵感，先放在这里"
+          : "还没找到这一种可能") +
+        "</h2><p>" +
+        (isCollection && !saved.size
+          ? "点击仓库卡片上的收藏图标，好工具就不会走散。"
+          : "试试更短的关键词、切换分类，或清除当前筛选。") +
+        '</p><button class="button primary" ' +
+        (isCollection && !saved.size
+          ? 'data-view="browse"'
+          : 'data-reset="1"') +
+        ">" +
+        (isCollection && !saved.size ? "去发现好工具" : "清除筛选") +
+        icon("arrow") +
+        "</button></div>";
+    $("#loadMore").hidden = shown.length >= list.length;
+    $("#pageProgress").textContent = list.length
+      ? "已探索 " + exact(shown.length) + " / " + exact(list.length)
+      : "";
   }
-
-  function renderAbout(meta) {
-    var src = meta.verifiedBySource || {};
-    $('#aboutGrid').innerHTML =
-      '<div class="about-card"><h3>数据来源</h3><p>通过 GitHub Search API 以 ' + meta.queries +
-      ' 组关键词抓取 <code>topic:claude-skills</code>、<code>topic:agent-skills</code>、<code>SKILL.md in:readme</code> 等目标，共扫描 ' +
-      exact(meta.reposFilteredOut + meta.reposKept) + ' 个仓库，剔除与 AI 无关的 ' + exact(meta.reposFilteredOut) +
-      ' 个，保留 ' + exact(meta.reposKept) + ' 个。</p></div>' +
-      '<div class="about-card"><h3>SKILL.md 核验</h3><p>两条通道互相印证：<code>GitHub Git Tree API</code> 逐仓库递归读取文件树，是最权威的口径（' +
-      exact(src['github-tree'] || 0) + ' 个）；<code>jsDelivr 文件索引</code> 免配额覆盖全部仓库（' +
-      exact(src.jsdelivr || 0) + ' 个）。合计核验出 ' + exact(meta.verifiedRepos) + ' 个仓库、' +
-      exact(meta.skillsCounted) + ' 个 <code>SKILL.md</code> 文件。GitHub 口径优先于镜像口径。</p></div>' +
-      '<div class="about-card"><h3>榜单口径</h3><ul><li>趋势 = 星标 × 0.45 + 日均星标 × 55 + Fork × 0.5 + 活跃度 × 25</li>' +
-      '<li>分类由仓库名、描述与 topic 关键词自动判定</li><li>数据为采集时快照，非实时</li>' +
-      '<li>镜像口径可能与 GitHub 官方统计存在少量差异</li></ul></div>';
+  function renderRanking() {
+    document.querySelectorAll("[data-rank]").forEach(function (button) {
+      var active = state.rank === button.dataset.rank;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    $("#rankingList").innerHTML = C.sortSkills(state.skills, state.rank)
+      .slice(0, 30)
+      .map(function (s, i) {
+        var value =
+          state.rank === "skills"
+            ? exact(s.skillCount) + " 个文件"
+            : state.rank === "recent"
+              ? ago(s.pushedAt)
+              : state.rank === "stars"
+                ? "☆ " + compact(s.stars)
+                : exact(Math.round(s.trendScore));
+        var label =
+          state.rank === "skills"
+            ? "SKILL.md"
+            : state.rank === "recent"
+              ? "最近提交"
+              : state.rank === "stars"
+                ? "累计星标"
+                : "综合热度";
+        return (
+          '<article class="ranking-row"><span class="ranking-number">' +
+          String(i + 1).padStart(2, "0") +
+          '</span><div class="ranking-repo">' +
+          avatar(s, true) +
+          '<div><button data-open="' +
+          esc(s.id) +
+          '">' +
+          esc(s.name) +
+          "</button><small>" +
+          esc(s.owner) +
+          '</small></div></div><span class="tag ranking-category">' +
+          esc(s.category) +
+          '</span><span class="ranking-value">' +
+          esc(value) +
+          "<small>" +
+          label +
+          '</small></span><span class="ranking-value ranking-files">' +
+          (s.verified ? exact(s.skillCount) : "—") +
+          "<small>技能文件</small></span>" +
+          saveButton(s) +
+          "</article>"
+        );
+      })
+      .join("");
   }
-
-  function renderSide(meta) {
-    $('#sideMeta').textContent = exact(meta.reposKept) + ' 个仓库 · 核验 ' + exact(meta.verifiedRepos) +
-      ' 个 · ' + new Date(meta.generatedAt).toLocaleString('zh-CN', { hour12: false });
-    $('#footStamp').textContent = '数据集生成于 ' + new Date(meta.generatedAt).toLocaleString('zh-CN', { hour12: false });
+  function renderAbout() {
+    var skills = state.snapshot,
+      verified = skills.filter(function (s) {
+        return s.verified;
+      });
+    var files = skills.reduce(function (sum, s) {
+      return sum + (s.skillCount || 0);
+    }, 0);
+    $("#dataStats").innerHTML = [
+      [skills.length, "快照收录仓库"],
+      [verified.length, "发现技能文件的仓库"],
+      [files, "已发现 SKILL.md 文件"],
+      [Object.keys(categoryCounts(skills)).length, "个探索方向"],
+    ]
+      .map(function (row) {
+        return (
+          '<div class="data-stat"><strong>' +
+          exact(row[0]) +
+          "</strong><span>" +
+          row[1] +
+          "</span></div>"
+        );
+      })
+      .join("");
+    var github = verified.filter(function (s) {
+      return s.verifiedSource === "github-tree";
+    }).length;
+    var mirror = verified.filter(function (s) {
+      return s.verifiedSource === "jsdelivr";
+    }).length;
+    $("#verificationSummary").textContent =
+      "快照中有 " +
+      exact(github) +
+      " 个仓库通过 GitHub 文件树核验，" +
+      exact(mirror) +
+      " 个通过镜像核验。不同来源和采集时间可能产生差异。";
   }
-
-  function openModal(id) {
-    var s = state.data.skills.filter(function (x) { return x.id === id; })[0];
-    if (!s) return;
-    var sourceLabel = s.verifiedSource === 'github-tree' ? 'GitHub Tree API 核验'
-      : s.verifiedSource === 'jsdelivr' ? '镜像索引核验' : '未核验';
-    var topics = (s.topics || []).map(function (t) { return '<span class="topic">' + esc(t) + '</span>'; }).join('');
-    $('#modalBody').innerHTML =
-      '<h2>' + esc(s.name) + '</h2>' +
-      '<div class="modal-sub">' + esc(s.fullName) + ' · ' + esc(s.category) + '</div>' +
-      '<p class="desc">' + esc(s.description || '作者未填写描述。') + '</p>' +
-      '<div class="kv">' +
-        '<div><span>Stars</span><b>' + num(s.stars) + '</b></div>' +
-        '<div><span>Forks</span><b>' + num(s.forks) + '</b></div>' +
-        '<div><span>SKILL.md</span><b>' + (s.verified ? s.skillCount : '未核验') + '</b></div>' +
-        '<div><span>日均星标</span><b>' + Number(s.starsPerDay || 0).toFixed(2) + '</b></div>' +
-        '<div><span>最近更新</span><b>' + ago(s.pushedAt) + '</b></div>' +
-        '<div><span>创建于</span><b>' + ago(s.createdAt) + '</b></div>' +
-      '</div>' +
-      (topics ? '<div class="topics">' + topics + '</div>' : '') +
-      '<div class="facts">' +
-        '<span class="fact">' + esc(s.language || '未知语言') + '</span>' +
-        '<span class="fact">' + esc(s.license || '未声明协议') + '</span>' +
-        '<span class="fact">趋势分 ' + exact(s.trendScore) + '</span>' +
-        '<span class="fact' + (s.verified ? ' ok' : '') + '">' + esc(sourceLabel) + '</span>' +
-      '</div>' +
-      '<div class="daily-actions" style="margin-top:16px">' +
-        '<a class="btn primary" href="' + esc(s.url) + '" target="_blank" rel="noopener">打开 GitHub 仓库 ↗</a>' +
-        (s.homepage ? '<a class="btn" href="' + esc(s.homepage) + '" target="_blank" rel="noopener">项目主页</a>' : '') +
-      '</div>';
-    $('#modal').classList.add('open');
+  function renderCurrent() {
+    if (!state.ready) return;
+    renderChrome();
+    $("#discoverView").hidden = state.view !== "discover";
+    $("#catalogView").hidden =
+      state.view !== "browse" && state.view !== "saved";
+    $("#rankingView").hidden = state.view !== "ranking";
+    $("#aboutView").hidden = state.view !== "about";
+    if (state.view === "discover") renderDiscover();
+    else if (state.view === "browse" || state.view === "saved") renderCatalog();
+    else if (state.view === "ranking") renderRanking();
+    else renderAbout();
   }
-
-  function renderAll() {
-    renderStats(state.data.meta, state.data.skills);
-    renderDaily();
-    renderRanking();
-    renderCategories();
-    renderBrowse();
-    renderAbout(state.data.meta);
-    renderSide(state.data.meta);
-    renderProfile();
-    renderFresh();
-    renderPulse('idle');
-  }
-
-  /* ---------- events ---------- */
-  document.addEventListener('click', function (e) {
-    var el;
-    if ((el = e.target.closest('[data-id]'))) { openModal(el.getAttribute('data-id')); return; }
-    if ((el = e.target.closest('[data-open]'))) { openModal(el.getAttribute('data-open')); return; }
-    if ((el = e.target.closest('[data-cat]'))) {
-      var target = el.getAttribute('data-cat');
-      state.cat = state.cat === target ? '全部' : target;
-      state.page = 1;
-      renderCategories(); renderBrowse();
-      document.getElementById('browse').scrollIntoView({ behavior: 'smooth' });
+  function toggleSaved(id) {
+    var skill = getSkill(id);
+    if (!skill) return;
+    var key = skill.id.toLowerCase(),
+      previous = saved.get(key),
+      active = !!previous;
+    if (active) saved.delete(key);
+    else saved.set(key, skill);
+    if (!writeStore("skillatlas-saved", Array.from(saved.values()))) {
+      if (active) saved.set(key, previous);
+      else saved.delete(key);
+      toast("浏览器暂时无法保存收藏，请检查存储权限或导出备份。");
       return;
     }
-    if ((el = e.target.closest('[data-rank]'))) {
-      state.rank = el.getAttribute('data-rank');
-      [].forEach.call(document.querySelectorAll('#rankSeg button'), function (b) { b.classList.toggle('active', b === el); });
-      renderRanking();
-      return;
+    var focusInDialog = $("#detailDialog").open;
+    renderCurrent();
+    if (focusInDialog) updateDetailSave();
+    else {
+      var button = Array.from(document.querySelectorAll("[data-save]")).find(
+        function (el) {
+          return el.dataset.save === skill.id;
+        },
+      );
+      if (button) button.focus({ preventScroll: true });
     }
-    if ((el = e.target.closest('[data-goal]'))) {
-      state.goal = el.getAttribute('data-goal'); state.page = 1; saveProfile();
-      renderProfile(); renderDaily(); renderFresh(); renderBrowse();
-      syncGitHub();
-      return;
-    }
-    if ((el = e.target.closest('[data-pref]'))) {
-      state.pref = el.getAttribute('data-pref'); state.page = 1; saveProfile();
-      renderProfile(); renderDaily(); renderFresh(); renderBrowse();
-      return;
-    }
-    if ((el = e.target.closest('[data-shuffle]'))) { state.dailyOffset++; renderDaily(); return; }
-    if ((el = e.target.closest('[data-jump]'))) {
-      var id = el.getAttribute('data-jump');
-      if (el.classList.contains('nav-item')) {
-        [].forEach.call(document.querySelectorAll('.nav-item'), function (b) { b.classList.toggle('active', b === el); });
+    toast(active ? "已从工具箱移除" : "已收藏，下一次灵感见");
+  }
+  function updateDetailSave() {
+    var button = $("#detailSave");
+    if (!button) return;
+    var active = isSaved(state.detailId);
+    button.innerHTML = icon("bookmark") + (active ? "已收藏" : "收藏到工具箱");
+    button.setAttribute("aria-pressed", String(active));
+  }
+  async function copyText(text, success) {
+    try {
+      if (navigator.clipboard && window.isSecureContext)
+        await navigator.clipboard.writeText(text);
+      else {
+        var field = document.createElement("textarea");
+        field.value = text;
+        field.style.cssText = "position:fixed;left:-9999px;top:0";
+        var active = document.activeElement;
+        ($("#detailDialog").open
+          ? $("#detailDialog")
+          : document.body
+        ).appendChild(field);
+        field.select();
+        var copied = document.execCommand("copy");
+        field.remove();
+        if (active) active.focus({ preventScroll: true });
+        if (!copied) throw new Error("copy failed");
       }
-      document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+      toast(success || "已复制链接");
+    } catch (_) {
+      toast("浏览器未允许复制，请从地址栏或仓库页手动复制。");
     }
-  });
-
-  $('#modalX').addEventListener('click', function () { $('#modal').classList.remove('open'); });
-  $('#modal').addEventListener('click', function (e) { if (e.target.id === 'modal') $('#modal').classList.remove('open'); });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') $('#modal').classList.remove('open');
-    if (e.key === '/' && document.activeElement !== $('#searchInput')) { e.preventDefault(); $('#searchInput').focus(); }
-  });
-
-  var t;
-  $('#searchInput').addEventListener('input', function (e) {
-    clearTimeout(t);
-    t = setTimeout(function () { state.q = e.target.value; state.page = 1; renderBrowse(); }, 150);
-  });
-  $('#sortSelect').addEventListener('change', function (e) { state.sort = e.target.value; state.page = 1; renderBrowse(); });
-  $('#verifiedOnly').addEventListener('change', function (e) { state.verifiedOnly = e.target.checked; state.page = 1; renderBrowse(); });
-  $('#skillOnly').addEventListener('change', function (e) { state.skillOnly = e.target.checked; state.page = 1; renderBrowse(); });
-  $('#loadMore').addEventListener('click', function () { state.page++; renderBrowse(); });
-  $('#refreshData').addEventListener('click', function () { location.reload(); });
-  $('#syncNow').addEventListener('click', syncGitHub);
-
-  /* ---------- boot ---------- */
-  loadData().then(function (data) {
-    if (!data || !data.skills || !data.skills.length) {
-      $('#stats').innerHTML = '<div class="empty" style="grid-column:1/-1">未找到数据集。请先运行 <code>python tools/collect_skills.py</code> 生成 <code>data/skills.js</code>，然后刷新页面。</div>';
+  }
+  function openDetail(id, fromHistory) {
+    var skill = getSkill(id);
+    if (!skill) {
+      resolveSharedSkill(id, fromHistory);
       return;
     }
-    state.data = data;
-    var meta = data.meta || {};
-    if (!meta.categoryCounts) {
-      meta.categoryCounts = {};
-      data.skills.forEach(function (s) { meta.categoryCounts[s.category] = (meta.categoryCounts[s.category] || 0) + 1; });
+    if (detailRequest) {
+      detailRequest.abort();
+      detailRequest = null;
     }
-    /* Deep links: ?q=keyword, ?cat=分类, ?skill=owner/repo */
-    var params = new URLSearchParams(location.search);
-    if (params.get('q')) { state.q = params.get('q'); $('#searchInput').value = state.q; }
-    if (params.get('cat') && meta.categoryCounts[params.get('cat')]) state.cat = params.get('cat');
-    renderAll();
-    setTimeout(syncGitHub, 500);
-    var wanted = params.get('skill');
-    if (wanted && data.skills.some(function (s) { return s.id === wanted; })) openModal(wanted);
+    if (!$("#detailDialog").open) previousFocus = document.activeElement;
+    state.detailId = skill.id;
+    var source =
+      skill.verifiedSource === "github-tree"
+        ? "GitHub 文件树"
+        : skill.verifiedSource === "jsdelivr"
+          ? "jsDelivr 镜像"
+          : "未知来源";
+    var info = skill.verified
+      ? "在" +
+        source +
+        "中发现 " +
+        exact(skill.skillCount) +
+        " 个 SKILL.md。核验时间：" +
+        dateLabel(skill.verifiedAt) +
+        "。此标记仅表示文件存在。"
+      : skill.skillCount === 0
+        ? "上次完整文件索引中未发现 SKILL.md；仓库可能属于相关框架或工具，也可能在之后新增技能文件。"
+        : "该仓库尚未完成技能文件核验，可以按需读取 GitHub 文件列表。";
+    $("#detailBody").innerHTML =
+      '<div class="detail-heading">' +
+      avatar(skill) +
+      '<div><h2 id="detailTitle">' +
+      esc(skill.name) +
+      "</h2><p>" +
+      esc(skill.fullName) +
+      '</p></div></div><p class="detail-description">' +
+      esc(skill.description || "作者还没有填写描述。打开仓库了解更多。") +
+      '</p><div class="detail-tags"><span class="tag">' +
+      esc(skill.category) +
+      '</span><span class="tag">' +
+      esc(skill.language || "语言未标注") +
+      '</span><span class="tag">' +
+      esc(
+        skill.license && skill.license !== "NOASSERTION"
+          ? skill.license
+          : "协议未明确",
+      ) +
+      "</span>" +
+      (skill.archived ? '<span class="tag archived">已归档</span>' : "") +
+      (skill.live ? '<span class="tag">热度刚刚同步</span>' : "") +
+      "</div>" +
+      '<div class="detail-metrics"><div class="detail-metric"><small>累计星标</small><b>' +
+      exact(skill.stars) +
+      '</b></div><div class="detail-metric"><small>Forks</small><b>' +
+      exact(skill.forks) +
+      '</b></div><div class="detail-metric"><small>日均星标 · 生命周期</small><b>' +
+      skill.starsPerDay.toFixed(1) +
+      '</b><em>累计星标 ÷ 仓库年龄</em></div><div class="detail-metric"><small>最近提交</small><b>' +
+      ago(skill.pushedAt) +
+      "</b><em>" +
+      dateLabel(skill.pushedAt) +
+      '</em></div></div><p class="detail-info">' +
+      esc(info) +
+      "</p>" +
+      '<div class="detail-tags">' +
+      skill.topics
+        .map(function (topic) {
+          return (
+            '<button class="tag" data-topic="' +
+            esc(topic) +
+            '">' +
+            esc(topic) +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>" +
+      '<div class="detail-actions"><a class="button primary" href="' +
+      esc(skill.url) +
+      '" target="_blank" rel="noopener noreferrer">打开 GitHub 仓库 ' +
+      icon("external") +
+      '</a><button class="button secondary" id="detailSave" data-save="' +
+      esc(skill.id) +
+      '"></button>' +
+      (skill.homepage
+        ? '<a class="button secondary" href="' +
+          esc(skill.homepage) +
+          '" target="_blank" rel="noopener noreferrer">项目主页 ' +
+          icon("external") +
+          "</a>"
+        : "") +
+      "</div>" +
+      '<div class="detail-secondary-actions"><button class="text-button" id="shareSkill">' +
+      icon("link") +
+      '复制分享链接</button><button class="text-button" id="copyClone">' +
+      icon("copy") +
+      '复制克隆命令</button></div><p id="detailStatus" class="detail-status" role="status" aria-live="polite" hidden></p>' +
+      '<section class="skill-files"><h3>里面有哪些技能？</h3><p>按需读取当前分支的 SKILL.md 路径。使用方法以仓库 README 为准。</p><div id="fileResults"><button class="button secondary" id="loadFiles">' +
+      icon("file") +
+      '读取技能文件列表</button><p class="file-status">需要连接 GitHub，可能受匿名 API 配额限制。</p></div></section>';
+    updateDetailSave();
+    if (!$("#detailDialog").open) $("#detailDialog").showModal();
+    $("#detailDialog").scrollTop = 0;
+    if (fileCache.has(skill.id.toLowerCase()))
+      renderFiles(skill, fileCache.get(skill.id.toLowerCase()));
+    if (!fromHistory) syncUrl();
+  }
+  function closeDetail(fromHistory) {
+    if (detailRequest) {
+      detailRequest.abort();
+      detailRequest = null;
+    }
+    state.detailId = null;
+    if ($("#detailDialog").open) $("#detailDialog").close();
+    if (!fromHistory) syncUrl();
+    if (previousFocus && previousFocus.isConnected)
+      previousFocus.focus({ preventScroll: true });
+  }
+  async function githubJson(url, signal) {
+    var response = await fetch(url, {
+      signal: signal,
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (!response.ok) {
+      if (response.status === 403 || response.status === 429)
+        throw new Error("GitHub API 暂时不可用或匿名额度已用完，请稍后重试。");
+      if (response.status === 404)
+        throw new Error("仓库或默认分支暂不可用，可以直接打开 GitHub 查看。");
+      throw new Error("GitHub 返回 " + response.status + "，请稍后重试。");
+    }
+    return response.json();
+  }
+  async function resolveSharedSkill(id, fromHistory) {
+    if (!C.validId(id)) {
+      toast("分享链接中的仓库名称无效。");
+      return;
+    }
+    if (sharedRequest) sharedRequest.abort();
+    var controller = new AbortController();
+    sharedRequest = controller;
+    var expectedUrl = location.href;
+    var timeout = setTimeout(function () {
+      controller.abort();
+    }, 12000);
+    toast("这个仓库还未收录，正在从 GitHub 读取…");
+    try {
+      var record = await githubJson(
+        "https://api.github.com/repos/" + id,
+        controller.signal,
+      );
+      var skill = C.normalizeLive(record);
+      if (!skill) throw new Error("GitHub 未返回有效的仓库信息。");
+      if (sharedRequest !== controller || expectedUrl !== location.href) return;
+      state.live = C.mergeSkills(state.live, [skill]);
+      rebuildIndex();
+      renderCurrent();
+      openDetail(skill.id, fromHistory);
+    } catch (error) {
+      if (sharedRequest !== controller || expectedUrl !== location.href) return;
+      toast(
+        controller.signal.aborted
+          ? "读取仓库超时，仍可浏览本地快照。"
+          : error.message || "暂时无法打开这个分享仓库。",
+      );
+    } finally {
+      clearTimeout(timeout);
+      if (sharedRequest === controller) sharedRequest = null;
+    }
+  }
+  async function loadFiles() {
+    var skill = getSkill(state.detailId);
+    if (!skill || detailRequest) return;
+    var controller = new AbortController();
+    detailRequest = controller;
+    var timeout = setTimeout(function () {
+      controller.abort();
+    }, 15000);
+    $("#fileResults").innerHTML =
+      '<p class="file-status" role="status">正在读取 GitHub 默认分支的文件索引…</p>';
+    try {
+      var branch = skill.defaultBranch;
+      if (!branch) {
+        var repo = await githubJson(
+          "https://api.github.com/repos/" + skill.id,
+          controller.signal,
+        );
+        branch = repo.default_branch;
+      }
+      if (!branch) throw new Error("这个仓库还没有可读取的默认分支。");
+      var tree = await githubJson(
+        "https://api.github.com/repos/" +
+          skill.id +
+          "/git/trees/" +
+          encodeURIComponent(branch) +
+          "?recursive=1",
+        controller.signal,
+      );
+      if (!Array.isArray(tree.tree))
+        throw new Error("GitHub 暂未返回有效的文件索引。");
+      var result = {
+        branch: branch,
+        truncated: !!tree.truncated,
+        paths: tree.tree
+          .filter(function (node) {
+            return node.type === "blob" && /(^|\/)skill\.md$/i.test(node.path);
+          })
+          .map(function (node) {
+            return node.path;
+          })
+          .sort(),
+      };
+      fileCache.set(skill.id.toLowerCase(), result);
+      if (
+        detailRequest === controller &&
+        state.detailId === skill.id &&
+        $("#detailDialog").open
+      )
+        renderFiles(skill, result);
+    } catch (error) {
+      if (
+        detailRequest !== controller ||
+        state.detailId !== skill.id ||
+        !$("#detailDialog").open
+      )
+        return;
+      var message = controller.signal.aborted
+        ? "连接超时，请检查网络后重试。"
+        : error.message || "暂时无法连接 GitHub。";
+      $("#fileResults").innerHTML =
+        '<p class="file-status" role="status">' +
+        esc(message) +
+        '</p><button class="button secondary" id="loadFiles">重新读取</button> <a class="text-button" href="' +
+        esc(skill.url + "/search?q=path%3ASKILL.md&type=code") +
+        '" target="_blank" rel="noopener noreferrer">在 GitHub 搜索文件 ' +
+        icon("external") +
+        "</a>";
+    } finally {
+      clearTimeout(timeout);
+      if (detailRequest === controller) detailRequest = null;
+    }
+  }
+  function renderFiles(skill, result) {
+    $("#fileResults").innerHTML =
+      '<p class="file-status">' +
+      (result.truncated
+        ? "GitHub 返回了不完整的文件树，以下仅展示已读取的 "
+        : "当前默认分支 " + esc(result.branch) + " · 找到 ") +
+      exact(result.paths.length) +
+      " 个技能文件。" +
+      (result.paths.length
+        ? "列表最多展示前 100 项，可输入目录名缩小范围。"
+        : "未发现同名文件时，可以查看 README 了解其他使用方式。") +
+      "</p>" +
+      (result.paths.length
+        ? '<input type="search" id="fileSearch" class="file-search" placeholder="筛选技能名称或目录…" aria-label="筛选仓库内的技能文件" /><div class="file-list" id="fileList"></div>'
+        : "") +
+      '<a class="text-button" href="' +
+      esc(skill.url + "/search?q=path%3ASKILL.md&type=code") +
+      '" target="_blank" rel="noopener noreferrer">在 GitHub 查看更多 ' +
+      icon("external") +
+      "</a>";
+    if (result.paths.length) renderFileList(skill, result, "");
+  }
+  function renderFileList(skill, result, query) {
+    var filtered = result.paths.filter(function (path) {
+      return path.toLowerCase().indexOf(query.toLowerCase()) !== -1;
+    });
+    $("#fileList").innerHTML = filtered.length
+      ? filtered
+          .slice(0, 100)
+          .map(function (path) {
+            var link =
+              skill.url +
+              "/blob/" +
+              encodeURIComponent(result.branch) +
+              "/" +
+              path.split("/").map(encodeURIComponent).join("/");
+            return (
+              '<a class="file-item" href="' +
+              esc(link) +
+              '" target="_blank" rel="noopener noreferrer"><span>' +
+              esc(path) +
+              "</span>" +
+              icon("external") +
+              "</a>"
+            );
+          })
+          .join("")
+      : '<p class="file-list-empty">没有匹配的技能文件。</p>';
+  }
+  async function syncGitHub() {
+    if (!state.ready || state.syncBusy) return;
+    if (Date.now() - state.lastSync < 60000) {
+      toast("刚刚同步过，稍后再来看看。");
+      return;
+    }
+    var goalAtStart = state.goal;
+    state.syncBusy = true;
+    var button = $("#syncNow");
+    button.disabled = true;
+    $("#syncLabel").textContent = "正在同步…";
+    var controller = new AbortController(),
+      timeout = setTimeout(function () {
+        controller.abort();
+      }, 12000);
+    try {
+      var query = C.GOALS[goalAtStart].query + " fork:false";
+      var payload = await githubJson(
+        "https://api.github.com/search/repositories?q=" +
+          encodeURIComponent(query) +
+          "&sort=updated&order=desc&per_page=20",
+        controller.signal,
+      );
+      if (!Array.isArray(payload.items))
+        throw new Error("GitHub 未返回有效的仓库列表。");
+      var items = payload.items.map(C.normalizeLive).filter(Boolean);
+      var newCount = items.filter(function (skill) {
+        return !lookup.has(skill.id.toLowerCase());
+      }).length;
+      state.live = C.mergeSkills(state.live, items);
+      state.lastSync = Date.now();
+      rebuildIndex();
+      renderCurrent();
+      $("#syncFeedback").textContent =
+        "已为「" +
+        C.GOALS[goalAtStart].label +
+        "」同步 " +
+        items.length +
+        " 个仓库，新增 " +
+        newCount +
+        " 个发现。同步结果已加入本次浏览，完整快照时间保持不变。";
+      $("#syncFeedback").hidden = false;
+      toast("本次发现已加入技能库");
+    } catch (error) {
+      $("#syncFeedback").textContent =
+        (controller.signal.aborted
+          ? "连接 GitHub 超时。"
+          : error.message || "暂时无法连接 GitHub。") +
+        " 你可以继续使用本地快照。";
+      $("#syncFeedback").hidden = false;
+      toast("同步未完成，本地技能库仍可使用");
+    } finally {
+      clearTimeout(timeout);
+      state.syncBusy = false;
+      button.disabled = false;
+      $("#syncLabel").textContent = "同步 GitHub";
+    }
+  }
+  function exportSaved() {
+    var blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            app: "SkillAtlas",
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            skills: Array.from(saved.values()),
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
+    var url = URL.createObjectURL(blob),
+      link = document.createElement("a");
+    link.href = url;
+    link.download =
+      "skillatlas-saved-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+    toast("收藏已导出");
+  }
+  async function importSaved(file) {
+    if (!file) return;
+    try {
+      if (file.size > 10 * 1024 * 1024)
+        throw new Error("请选择小于 10 MB 的收藏文件。");
+      var payload = JSON.parse(await file.text());
+      if (
+        !payload ||
+        payload.app !== "SkillAtlas" ||
+        payload.version !== 1 ||
+        !Array.isArray(payload.skills) ||
+        payload.skills.length > 5000
+      )
+        throw new Error("这不是有效的 SkillAtlas 收藏文件。");
+      var valid = payload.skills.map(C.normalize).filter(Boolean);
+      if (valid.length !== payload.skills.length)
+        throw new Error("收藏文件含有无效的仓库记录，未导入。");
+      var next = new Map(saved);
+      valid.forEach(function (s) {
+        next.set(s.id.toLowerCase(), getSkill(s.id) || s);
+      });
+      if (next.size > 5000)
+        throw new Error("收藏数量超过 5,000 条，请分批整理。");
+      if (!writeStore("skillatlas-saved", Array.from(next.values())))
+        throw new Error("浏览器空间不足，未能导入收藏。");
+      var added = next.size - saved.size;
+      saved = next;
+      rebuildIndex();
+      renderCurrent();
+      toast("已导入，新增 " + added + " 个收藏");
+    } catch (error) {
+      toast(
+        error instanceof SyntaxError
+          ? "JSON 文件无法解析，请检查收藏文件。"
+          : error.message,
+      );
+    }
+    $("#importSaved").value = "";
+  }
+
+  document.addEventListener("click", function (event) {
+    var el;
+    if ((el = event.target.closest("[data-save]"))) {
+      toggleSaved(el.dataset.save);
+      return;
+    }
+    if ((el = event.target.closest("[data-open]"))) {
+      openDetail(el.dataset.open);
+      return;
+    }
+    if ((el = event.target.closest("[data-view]"))) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+        return;
+      event.preventDefault();
+      navigate(el.dataset.view, true);
+      return;
+    }
+    if ((el = event.target.closest("[data-category]"))) {
+      resetFilters();
+      state.cat = el.dataset.category;
+      navigate("browse");
+      return;
+    }
+    if ((el = event.target.closest("[data-filter-cat]"))) {
+      state.cat = el.dataset.filterCat;
+      state.page = 1;
+      renderCurrent();
+      syncUrl();
+      return;
+    }
+    if ((el = event.target.closest("[data-goal]"))) {
+      state.goal = el.dataset.goal;
+      state.dailyOffset = 0;
+      persistProfile();
+      renderCurrent();
+      syncUrl();
+      return;
+    }
+    if ((el = event.target.closest("[data-layout]"))) {
+      state.layout = el.dataset.layout;
+      persistProfile();
+      renderCurrent();
+      return;
+    }
+    if ((el = event.target.closest("[data-rank]"))) {
+      state.rank = el.dataset.rank;
+      renderRanking();
+      syncUrl();
+      return;
+    }
+    if (event.target.closest("[data-reset]")) {
+      resetFilters();
+      renderCurrent();
+      syncUrl();
+      return;
+    }
+    if ((el = event.target.closest("[data-topic]"))) {
+      var topic = el.dataset.topic;
+      closeDetail();
+      resetFilters();
+      state.q = "topic:" + topic;
+      navigate("browse");
+      return;
+    }
+    if (event.target.closest("#loadFiles")) {
+      loadFiles();
+      return;
+    }
+    if (event.target.closest("#shareSkill")) {
+      copyText(currentUrl(state.detailId).href);
+      return;
+    }
+    if (event.target.closest("#copyClone")) {
+      var skill = getSkill(state.detailId);
+      if (skill)
+        copyText(
+          "git clone " + skill.url + ".git",
+          "已复制克隆命令，使用方法请查看仓库 README",
+        );
+    }
   });
+  $("#searchInput").addEventListener("input", function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+      if (!state.ready) return;
+      state.q = $("#searchInput").value;
+      state.page = 1;
+      if (state.view !== "saved") state.view = "browse";
+      renderCurrent();
+      syncUrl();
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }, 160);
+  });
+  $("#searchForm").addEventListener("submit", function (event) {
+    event.preventDefault();
+    clearTimeout(searchTimer);
+    state.q = $("#searchInput").value;
+    navigate(state.view === "saved" ? "saved" : "browse");
+  });
+  ["sortSelect", "languageSelect", "verifiedOnly", "skillOnly"].forEach(
+    function (id) {
+      $("#" + id).addEventListener("change", function (event) {
+        var key = {
+          sortSelect: "sort",
+          languageSelect: "language",
+          verifiedOnly: "verifiedOnly",
+          skillOnly: "skillOnly",
+        }[id];
+        state[key] =
+          event.target.type === "checkbox"
+            ? event.target.checked
+            : event.target.value;
+        state.page = 1;
+        renderCurrent();
+        syncUrl();
+      });
+    },
+  );
+  $("#resetFilters").addEventListener("click", function () {
+    resetFilters();
+    renderCurrent();
+    syncUrl();
+  });
+  $("#shufflePicks").addEventListener("click", function () {
+    state.dailyOffset++;
+    renderDiscover();
+  });
+  $("#loadMore").addEventListener("click", function () {
+    var previousCount = $("#catalogGrid").children.length;
+    state.page++;
+    renderCatalog();
+    var nextCard = $("#catalogGrid").children[previousCount];
+    if (nextCard) {
+      var button = nextCard.querySelector("[data-open]");
+      if (button) button.focus({ preventScroll: true });
+    }
+  });
+  $("#shareFilters").addEventListener("click", function () {
+    copyText(currentUrl().href);
+  });
+  $("#closeDetail").addEventListener("click", function () {
+    closeDetail();
+  });
+  $("#detailDialog").addEventListener("cancel", function (event) {
+    event.preventDefault();
+    closeDetail();
+  });
+  $("#detailDialog").addEventListener("click", function (event) {
+    if (event.target === $("#detailDialog")) {
+      var rect = event.target.getBoundingClientRect();
+      if (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      )
+        closeDetail();
+    }
+  });
+  $("#detailDialog").addEventListener("input", function (event) {
+    if (event.target.id !== "fileSearch") return;
+    var skill = getSkill(state.detailId);
+    if (skill && fileCache.has(skill.id.toLowerCase()))
+      renderFileList(
+        skill,
+        fileCache.get(skill.id.toLowerCase()),
+        event.target.value,
+      );
+  });
+  $("#menuButton").addEventListener("click", function () {
+    setMobileMenu(!$("#sidebar").classList.contains("is-open"));
+  });
+  $("#sidebarBackdrop").addEventListener("click", function () {
+    setMobileMenu(false);
+    $("#menuButton").focus();
+  });
+  document.addEventListener("keydown", function (event) {
+    var typing = event.target.closest(
+      'input,textarea,select,[contenteditable="true"]',
+    );
+    if (
+      event.key === "/" &&
+      !typing &&
+      !$("#detailDialog").open &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      $("#searchInput").focus();
+    }
+    if (event.key === "Escape" && $("#sidebar").classList.contains("is-open")) {
+      setMobileMenu(false);
+      $("#menuButton").focus();
+    }
+    // Keep the mobile navigation's focus inside the visible drawer.
+    if (event.key === "Tab" && $("#sidebar").classList.contains("is-open")) {
+      var focusable = $("#sidebar").querySelectorAll(
+        "a[href],button:not([disabled])",
+      );
+      var first = focusable[0],
+        last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  });
+  $("#themeToggle").addEventListener("click", function () {
+    var theme =
+      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme(theme);
+    writeStore("skillatlas-theme", theme);
+  });
+  $("#syncNow").addEventListener("click", syncGitHub);
+  $("#exportSaved").addEventListener("click", exportSaved);
+  $("#importSaved").addEventListener("change", function (event) {
+    importSaved(event.target.files[0]);
+  });
+  $("#retryLoad").addEventListener("click", function () {
+    location.reload();
+  });
+  window.addEventListener("popstate", function () {
+    if (!state.ready) return;
+    clearTimeout(searchTimer);
+    closeDetail(true);
+    var wanted = readUrl();
+    renderCurrent();
+    if (wanted) openDetail(wanted, true);
+  });
+  window.addEventListener("resize", function () {
+    if (window.innerWidth > 760 && $("#sidebar").classList.contains("is-open"))
+      setMobileMenu(false);
+    else
+      $("#sidebar").inert =
+        window.innerWidth <= 760 &&
+        !$("#sidebar").classList.contains("is-open");
+  });
+  window.addEventListener("storage", function (event) {
+    if (event.key !== "skillatlas-saved" || !state.ready) return;
+    var values = readStore("skillatlas-saved", []);
+    if (!Array.isArray(values)) return;
+    saved = new Map();
+    values.slice(0, 5000).forEach(function (r) {
+      var s = C.normalize(r);
+      if (s) saved.set(s.id.toLowerCase(), s);
+    });
+    rebuildIndex();
+    renderCurrent();
+    updateDetailSave();
+  });
+
+  async function boot() {
+    hydrateIcons();
+    setMobileMenu(false);
+    var theme = readStore("skillatlas-theme", "");
+    applyTheme(
+      theme === "dark" || theme === "light"
+        ? theme
+        : matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light",
+    );
+    try {
+      var data = window.SKILL_DATA;
+      if (!data || !Array.isArray(data.skills) || !data.skills.length) {
+        var controller = new AbortController(),
+          timeout = setTimeout(function () {
+            controller.abort();
+          }, 8000);
+        try {
+          var response = await fetch("./data/skills.json", {
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error("No dataset");
+          data = await response.json();
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+      if (!data || !Array.isArray(data.skills) || !data.skills.length)
+        throw new Error("Empty dataset");
+      state.snapshot = data.skills.map(C.normalize).filter(Boolean);
+      if (!state.snapshot.length) throw new Error("Invalid dataset");
+      state.meta = data.meta || {};
+      state.ready = true;
+      rebuildIndex();
+      var wanted = readUrl();
+      renderCurrent();
+      $("#loadingState").hidden = true;
+      $("#appContent").hidden = false;
+      if (wanted) openDetail(wanted, true);
+    } catch (_) {
+      $("#loadingState").hidden = true;
+      $("#loadError").hidden = false;
+    }
+  }
+  boot();
 })();

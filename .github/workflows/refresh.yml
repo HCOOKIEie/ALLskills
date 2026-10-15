@@ -31,6 +31,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restore incremental collection caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/raw_repos.json
+            data/verify_cache.json
+            data/jsdelivr_cache.json
+          key: skillatlas-data-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: skillatlas-data-
+
       - name: Collect GitHub skills data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -45,7 +55,7 @@ jobs:
       - name: Stage site
         run: |
           mkdir -p _site/data
-          cp index.html styles.css main.js _site/
+          cp index.html styles.css core.js main.js favicon.svg _site/
           cp data/skills.json data/skills.js data/meta.json _site/data/
           touch _site/.nojekyll
 

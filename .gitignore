@@ -10,6 +10,9 @@ _site/
 # 本地临时文件
 qa/
 *.log
+__pycache__/
+*.pyc
+tests/.collector-test-*/
 
 # 操作系统
 .DS_Store

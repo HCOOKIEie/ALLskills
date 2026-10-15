@@ -1,176 +1,477 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SkillAtlas · AI Skills 聚合发现平台</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="./styles.css" />
-</head>
-<body>
-<div class="app">
-  <aside class="sidebar">
-    <a class="brand" href="#top">
-      <span class="brand-mark"><i></i><i></i><i></i></span>
-      <span class="brand-text">Skill<span>Atlas</span><small>AI SKILLS INDEX</small></span>
-    </a>
-    <nav class="nav">
-      <p class="nav-label">探索</p>
-      <button class="nav-item" data-jump="fresh"><b>✦</b>实时雷达 <em>LIVE</em></button>
-      <button class="nav-item active" data-jump="daily"><b>◈</b>今日推荐</button>
-      <button class="nav-item" data-jump="ranking"><b>↗</b>趋势榜单</button>
-      <button class="nav-item" data-jump="categories"><b>◫</b>技能分类</button>
-      <button class="nav-item" data-jump="browse"><b>▦</b>全部 Skills</button>
-      <button class="nav-item" data-jump="personalize"><b>◎</b>我的偏好</button>
-      <p class="nav-label">数据</p>
-      <button class="nav-item" data-jump="about"><b>ⓘ</b>数据来源与核验</button>
-    </nav>
-    <div class="side-foot">
-      <div class="source-card">
-        <span class="live"></span>
-        <b>数据实时采集自 GitHub</b>
-        <p id="sideMeta">正在读取数据集…</p>
-        <button id="refreshData">重新载入数据集</button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="发现适合你的 AI Agent Skills。探索真实 GitHub 仓库，按任务筛选、查看技能文件，收藏下一次灵感。"
+    />
+    <meta name="theme-color" content="#f7f8fa" />
+    <title>SkillAtlas · 发现 AI 的更多可能</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./data/skills.js" defer></script>
+    <script src="./core.js" defer></script>
+    <script src="./main.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到主要内容</a>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <a
+        class="brand"
+        href="?view=discover"
+        data-view="discover"
+        aria-label="SkillAtlas 首页"
+      >
+        <span class="brand-symbol" aria-hidden="true"
+          ><i></i><i></i><i></i><i></i
+        ></span>
+        <span>SkillAtlas<small>让 AI 更有用一点</small></span>
+      </a>
+      <div class="sidebar-label">工作空间</div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="discover">
+          <span data-icon="compass"></span>发现灵感<span class="nav-dot"></span>
+        </button>
+        <button class="nav-item" data-view="browse">
+          <span data-icon="grid"></span>全部 Skills<span
+            class="nav-count"
+            id="navTotal"
+            >—</span
+          >
+        </button>
+        <button class="nav-item" data-view="ranking">
+          <span data-icon="trend"></span>热门榜单
+        </button>
+        <button class="nav-item" data-view="saved">
+          <span data-icon="bookmark"></span>我的收藏<span
+            class="nav-count"
+            id="savedCount"
+            >0</span
+          >
+        </button>
+      </nav>
+      <div class="sidebar-label second-label">按领域探索</div>
+      <nav class="category-nav" id="categoryNav" aria-label="技能分类"></nav>
+      <div class="sidebar-bottom">
+        <div class="local-note">
+          <span class="local-note-icon" data-icon="layers"></span
+          ><b>属于你的技能工具箱</b>
+          <p>发现、了解、收藏。<br />让下一次创造，更轻松。</p>
+          <button data-view="saved">
+            打开我的收藏 <span data-icon="arrow"></span>
+          </button>
+        </div>
+        <button class="nav-item" data-view="about">
+          <span data-icon="info"></span>关于与数据来源
+        </button>
+        <div class="sidebar-footer">
+          <a
+            href="https://github.com/HCOOKIEie/ALLskills"
+            target="_blank"
+            rel="noopener noreferrer"
+            ><span data-icon="github"></span>开源共建 <span>↗</span></a
+          ><button
+            id="themeToggle"
+            class="icon-button"
+            aria-label="切换深色外观"
+            title="切换外观"
+          >
+            <span data-icon="sun"></span>
+          </button>
+        </div>
       </div>
-    </div>
-  </aside>
+    </aside>
 
-  <main class="main" id="top">
-    <header class="topbar">
-      <div class="crumb"><span>SkillAtlas</span><i>/</i>GitHub Skills Index</div>
-      <div class="topbar-right">
-        <div class="search">
-          <span>⌕</span>
-          <input id="searchInput" placeholder="搜索 Skill、作者、关键词或 topic…" autocomplete="off" />
-          <kbd>/</kbd>
+    <main class="main" id="content" tabindex="-1">
+      <header class="topbar">
+        <div class="topbar-start">
+          <button
+            class="icon-button menu-button"
+            id="menuButton"
+            aria-label="打开导航"
+            aria-controls="sidebar"
+            aria-expanded="false"
+          >
+            <span data-icon="menu"></span></button
+          ><span class="breadcrumb"
+            >工作空间 <span>/</span> <b id="viewLabel">发现灵感</b></span
+          >
         </div>
-        <a class="gh-link" id="repoLink" href="https://github.com" target="_blank" rel="noopener">GitHub ↗</a>
+        <form class="search" id="searchForm" role="search">
+          <span data-icon="search"></span
+          ><input
+            id="searchInput"
+            type="search"
+            aria-label="搜索 Skills"
+            placeholder="搜索技能、作者，或一个想法…"
+            autocomplete="off"
+            maxlength="300"
+          /><kbd>/</kbd>
+        </form>
+        <a
+          class="top-github"
+          href="https://github.com/HCOOKIEie/ALLskills"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="在 GitHub 查看项目"
+          ><span data-icon="github"></span
+        ></a>
+      </header>
+
+      <div class="page-wrap">
+        <div id="loadingState" class="loading-state" role="status">
+          <span class="loading-mark"></span>正在打开你的技能地图…
+        </div>
+        <div id="loadError" class="error-state" hidden>
+          <span data-icon="cloud"></span>
+          <h1>暂时没能打开技能地图</h1>
+          <p>请检查 data/skills.js 是否存在，或通过本地服务器打开项目。</p>
+          <button class="button primary" id="retryLoad">重新加载</button>
+        </div>
+        <div id="appContent" hidden>
+          <section id="discoverView" class="view">
+            <div class="hero">
+              <div class="hero-copy">
+                <span class="eyebrow"
+                  ><span></span>为每一种创造，找到一点助力</span
+                >
+                <h1>
+                  给你的 AI，<br />多一点<span class="hero-accent">可能。</span>
+                </h1>
+                <p>
+                  把好用的 Skills，带进你的日常。<br />从一个小想法，到下一件了不起的事。
+                </p>
+                <div class="hero-actions">
+                  <button class="button primary" data-view="browse">
+                    探索全部 Skills <span data-icon="arrow"></span></button
+                  ><button class="hero-secondary" data-view="saved">
+                    <span data-icon="bookmark"></span>我的工具箱
+                  </button>
+                </div>
+                <div class="hero-proof" id="heroProof"></div>
+              </div>
+              <div class="hero-art" aria-hidden="true">
+                <div class="orbit orbit-one"></div>
+                <div class="orbit orbit-two"></div>
+                <div class="orbit orbit-three"></div>
+                <span class="orbit-dot dot-one"></span
+                ><span class="orbit-dot dot-two"></span
+                ><span class="orbit-dot dot-three"></span>
+                <div class="art-center"><span data-icon="sparkles"></span></div>
+                <div class="art-card art-code">
+                  <span class="art-icon blue" data-icon="code"></span>
+                  <div>
+                    <b>把想法写成产品</b><small>BUILD SOMETHING GREAT</small>
+                  </div>
+                  <span class="art-check">✓</span>
+                </div>
+                <div class="art-card art-design">
+                  <span class="art-icon violet" data-icon="palette"></span>
+                  <div>
+                    <b>让灵感自由生长</b><small>MAKE ROOM FOR IDEAS</small>
+                  </div>
+                </div>
+                <div class="art-card art-work">
+                  <span class="art-icon green" data-icon="bolt"></span>
+                  <div>
+                    <b>少一点重复，多一点专注</b
+                    ><small>DO MORE OF WHAT MATTERS</small>
+                  </div>
+                </div>
+                <span class="art-caption"
+                  >A LITTLE SKILL. A LOT OF POSSIBILITY.</span
+                >
+              </div>
+            </div>
+            <div class="snapshot-bar">
+              <span
+                ><i class="status-dot"></i
+                ><span id="snapshotLabel">本地数据快照</span></span
+              ><button id="syncNow">
+                <span data-icon="refresh"></span
+                ><span id="syncLabel">同步 GitHub</span>
+              </button>
+            </div>
+            <p class="sync-feedback" id="syncFeedback" role="status" hidden></p>
+            <section class="intent-section" aria-labelledby="intentHeading">
+              <div class="section-heading compact">
+                <h2 id="intentHeading">今天，想做点什么？</h2>
+                <span>从你的目标开始</span>
+              </div>
+              <div class="intent-options" id="goalChoices"></div>
+            </section>
+            <section
+              class="recommend-section"
+              aria-labelledby="recommendHeading"
+            >
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">MADE FOR YOUR NEXT IDEA</span>
+                  <h2 id="recommendHeading">值得一试</h2>
+                  <p id="recommendNote">
+                    从已发现 SKILL.md 的仓库里，为你挑选。
+                  </p>
+                </div>
+                <button class="text-button" id="shufflePicks">
+                  <span data-icon="refresh"></span>换一组灵感
+                </button>
+              </div>
+              <div class="featured-grid" id="featuredGrid"></div>
+            </section>
+            <section
+              class="explore-section"
+              aria-labelledby="categoriesHeading"
+            >
+              <div class="section-heading">
+                <div>
+                  <h2 id="categoriesHeading">找到你的方向</h2>
+                  <p>每一种好奇，都有一个起点。</p>
+                </div>
+                <button class="text-button" data-view="browse">
+                  浏览全部 <span data-icon="arrow"></span>
+                </button>
+              </div>
+              <div class="category-grid" id="categoryGrid"></div>
+            </section>
+            <section class="recent-section" aria-labelledby="recentHeading">
+              <div class="section-heading">
+                <div>
+                  <h2 id="recentHeading">最近有新进展</h2>
+                  <p>按仓库最近提交时间排列，数据来自快照或手动同步。</p>
+                </div>
+                <button class="text-button" data-view="ranking">
+                  查看榜单 <span data-icon="arrow"></span>
+                </button>
+              </div>
+              <div class="recent-list" id="recentList"></div>
+            </section>
+          </section>
+
+          <section
+            id="catalogView"
+            class="view"
+            hidden
+            aria-labelledby="catalogTitle"
+          >
+            <div class="page-heading">
+              <div>
+                <span class="eyebrow" id="catalogEyebrow"
+                  >THE SKILLS LIBRARY</span
+                >
+                <h1 id="catalogTitle">一整个世界的可能</h1>
+                <p id="catalogIntro">找到适合你的工具，把精力留给创造。</p>
+              </div>
+              <button class="button secondary" id="shareFilters">
+                <span data-icon="link"></span>分享筛选
+              </button>
+            </div>
+            <div class="catalog-toolbar">
+              <div class="catalog-search-note" id="queryNote" hidden></div>
+              <div
+                class="category-chips"
+                id="categoryChips"
+                aria-label="按分类筛选"
+              ></div>
+              <div class="filter-options">
+                <label class="checkbox-label"
+                  ><input type="checkbox" id="verifiedOnly" />已发现
+                  SKILL.md</label
+                ><label class="checkbox-label"
+                  ><input type="checkbox" id="skillOnly" />有 Skills 线索</label
+                ><label class="select-label"
+                  ><span>语言</span
+                  ><select id="languageSelect" aria-label="按编程语言筛选">
+                    <option value="">全部语言</option>
+                  </select></label
+                ><button class="text-button reset-filters" id="resetFilters">
+                  <span data-icon="close"></span>重置筛选
+                </button>
+              </div>
+            </div>
+            <div class="results-toolbar">
+              <p id="resultsCount" role="status" aria-live="polite"></p>
+              <div class="results-controls">
+                <select id="sortSelect" aria-label="排序方式">
+                  <option value="recommended">推荐排序</option>
+                  <option value="stars">星标最多</option>
+                  <option value="recent">最近更新</option>
+                  <option value="new">最新创建</option>
+                  <option value="skills">技能文件最多</option>
+                  <option value="name">名称 A–Z</option>
+                </select>
+                <div class="view-switch" role="group" aria-label="显示方式">
+                  <button
+                    class="active icon-button"
+                    data-layout="grid"
+                    aria-label="卡片视图"
+                    aria-pressed="true"
+                  >
+                    <span data-icon="grid"></span></button
+                  ><button
+                    class="icon-button"
+                    data-layout="list"
+                    aria-label="列表视图"
+                    aria-pressed="false"
+                  >
+                    <span data-icon="list"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="catalog-grid" id="catalogGrid"></div>
+            <div class="pagination">
+              <button class="button secondary" id="loadMore">
+                再探索一些 <span data-icon="plus"></span></button
+              ><span id="pageProgress"></span>
+            </div>
+          </section>
+
+          <section
+            id="rankingView"
+            class="view"
+            hidden
+            aria-labelledby="rankingTitle"
+          >
+            <div class="page-heading">
+              <div>
+                <span class="eyebrow">GOOD THINGS GET NOTICED</span>
+                <h1 id="rankingTitle">被更多人发现的好工具</h1>
+                <p>人气是参考，适合你才是答案。</p>
+              </div>
+            </div>
+            <div class="ranking-notice">
+              <span data-icon="info"></span>
+              <p>
+                这里的「综合热度」是基于快照的启发式评分。日均星标为累计星标 ÷
+                仓库年龄，并非最近 24 小时增长。
+              </p>
+            </div>
+            <div class="ranking-tabs" id="rankTabs">
+              <button class="active" data-rank="trend" aria-pressed="true">
+                综合热度</button
+              ><button data-rank="stars" aria-pressed="false">星标最多</button
+              ><button data-rank="recent" aria-pressed="false">最近更新</button
+              ><button data-rank="skills" aria-pressed="false">技能文件</button>
+            </div>
+            <div class="ranking-list" id="rankingList"></div>
+          </section>
+
+          <section
+            id="aboutView"
+            class="view"
+            hidden
+            aria-labelledby="aboutTitle"
+          >
+            <div class="page-heading">
+              <div>
+                <span class="eyebrow">A CLEARER PICTURE</span>
+                <h1 id="aboutTitle">好工具，也需要透明的信息</h1>
+                <p>了解这张技能地图从哪里来，以及它的边界。</p>
+              </div>
+            </div>
+            <div id="dataStats" class="data-stats"></div>
+            <div class="about-grid">
+              <article class="about-card">
+                <span class="about-icon blue" data-icon="github"></span>
+                <h2>来自真实的开源仓库</h2>
+                <p>
+                  使用 GitHub Search API 发现候选仓库，以名称、描述和 Topics
+                  自动分类。收录对象是仓库，一个仓库可能包含多个技能，也可能是框架或
+                  MCP 工具。
+                </p>
+                <p>
+                  分类可能有误判。搜索支持多个关键词、引号短语，以及
+                  <code>owner:</code
+                  >、<code>topic:</code>、<code>lang:</code>，前缀
+                  <code>-</code> 可以排除关键词。
+                </p>
+              </article>
+              <article class="about-card">
+                <span class="about-icon green" data-icon="shield"></span>
+                <h2>核验意味着什么？</h2>
+                <p>
+                  「已发现 SKILL.md」表示 GitHub 文件树或 jsDelivr
+                  镜像索引中存在同名文件。它是文件存在性核验，不代表质量审查或安全背书。
+                </p>
+                <p id="verificationSummary"></p>
+              </article>
+              <article class="about-card">
+                <span class="about-icon violet" data-icon="clock"></span>
+                <h2>快照与手动同步</h2>
+                <p>
+                  完整数据在采集时生成；「同步 GitHub」按当前目标读取最多 20
+                  个最近更新的仓库并合并到本次浏览。同步结果不写回仓库，也不会把未核验的结果标为已核验。
+                </p>
+                <p>
+                  GitHub API
+                  有匿名配额。离线或额度不足时，你仍然可以搜索快照、收藏和浏览已有数据。
+                </p>
+              </article>
+              <article class="about-card">
+                <span class="about-icon orange" data-icon="bookmark"></span>
+                <h2>一个安静的私人工具箱</h2>
+                <p>
+                  收藏和目标偏好保存在当前浏览器，没有账户也能使用。清除浏览器数据会移除收藏，切换设备不会自动同步。
+                </p>
+                <p>
+                  分享筛选和单个仓库链接可以帮助你把发现带给别人。本地 file://
+                  链接需要对方也有同一份项目文件。
+                </p>
+                <button class="text-button" id="exportSaved">
+                  <span data-icon="download"></span>导出收藏 JSON</button
+                ><label class="text-button import-button"
+                  ><span data-icon="upload"></span>导入收藏<input
+                    type="file"
+                    id="importSaved"
+                    accept="application/json,.json"
+                /></label>
+              </article>
+            </div>
+            <div class="about-bottom">
+              <span>保持轻巧。纯静态，无构建依赖。</span
+              ><a
+                href="https://github.com/HCOOKIEie/ALLskills"
+                target="_blank"
+                rel="noopener noreferrer"
+                >一起让 SkillAtlas 更好 <span data-icon="arrow"></span
+              ></a>
+            </div>
+          </section>
+
+          <footer class="footer">
+            <span
+              ><span class="footer-brand">SkillAtlas</span>
+              一个发现好工具的小地方。</span
+            ><span id="footerStamp"></span
+            ><span>Keep exploring <span class="footer-spark">✦</span></span>
+          </footer>
+        </div>
       </div>
-    </header>
-
-    <div class="wrap">
-      <section class="stats" id="stats"></section>
-
-      <section class="pulse-strip" id="pulseStrip" aria-live="polite">
-        <div class="pulse-status"><span class="pulse-orb"></span><div><b>GitHub 实时脉冲</b><small id="pulseText">正在连接公开 API…</small></div></div>
-        <div class="pulse-metrics"><span><strong id="pulseNew">—</strong><small>本次新发现</small></span><span><strong id="pulseHot">—</strong><small>24h 热度</small></span><span><strong id="pulseLatency">—</strong><small>响应</small></span></div>
-        <button class="sync-btn" id="syncNow"><span>↻</span> 立即同步</button>
-      </section>
-
-      <section class="control-dock" id="personalize">
-        <div class="dock-copy"><span class="kicker">YOUR RADAR</span><h2>把发现调成你的频率</h2><p id="preferenceSummary">选择你正在做的事，推荐会按你的偏好重新排序。</p></div>
-        <div class="preference-group" id="goalChoices" aria-label="工作目标">
-          <span class="group-label">我今天要</span>
-          <button class="preference active" data-goal="build">构建产品</button><button class="preference" data-goal="research">做研究</button><button class="preference" data-goal="create">做内容</button><button class="preference" data-goal="automate">自动化</button>
-        </div>
-        <div class="preference-group" id="prefChoices" aria-label="偏好分类">
-          <span class="group-label">偏好</span><button class="preference active" data-pref="编程开发">编程开发</button><button class="preference" data-pref="科研学术">科研学术</button><button class="preference" data-pref="浏览器自动化">浏览器自动化</button><button class="preference" data-pref="设计创意">设计创意</button>
-        </div>
-      </section>
-
-      <section class="block fresh-block" id="fresh">
-        <div class="block-head"><div><span class="kicker">FRESH SIGNAL</span><h2>刚刚发生</h2><p>来自 GitHub 的最新变化，按新鲜度和增长速度排序</p></div><button class="link-btn" data-jump="ranking">看完整趋势 <span>→</span></button></div>
-        <div class="fresh-layout"><div class="fresh-feed" id="freshFeed"></div><aside class="why-panel"><span class="kicker">WHY THIS</span><h3>推荐不是随机的。</h3><p>我们把星标增速、最近 push、技能文件数量和你的偏好组合成一个可解释分数。</p><div class="why-meter"><span><i></i></span><b id="personalScore">82</b><small>匹配度</small></div><button class="link-btn" data-jump="personalize">调整偏好 <span>→</span></button></aside></div>
-      </section>
-
-      <section class="block" id="daily">
-        <div class="block-head">
-          <div>
-            <span class="kicker">DAILY PICK</span>
-            <h2>今日推荐</h2>
-            <p id="dailyNote">按日期从已核验的 Skills 中轮换</p>
-          </div>
-          <button class="link-btn" data-shuffle="1">换一批 <span>↻</span></button>
-        </div>
-        <div class="daily-grid" id="dailyGrid"></div>
-      </section>
-
-      <section class="block" id="ranking">
-        <div class="block-head">
-          <div>
-            <span class="kicker">TRENDING</span>
-            <h2>趋势榜单</h2>
-            <p>综合星标、增长速率、活跃度与 Fork 计算</p>
-          </div>
-          <div class="seg" id="rankSeg">
-            <button class="active" data-rank="trend">趋势</button>
-            <button data-rank="stars">星标</button>
-            <button data-rank="recent">最近更新</button>
-            <button data-rank="skills">技能数</button>
-          </div>
-        </div>
-        <div class="rank-table" id="rankTable"></div>
-      </section>
-
-      <section class="block" id="categories">
-        <div class="block-head">
-          <div>
-            <span class="kicker">CATEGORIES</span>
-            <h2>技能分类</h2>
-            <p>基于仓库名称、描述与 topic 自动归类</p>
-          </div>
-        </div>
-        <div class="cat-grid" id="catGrid"></div>
-      </section>
-
-      <section class="block" id="browse">
-        <div class="block-head">
-          <div>
-            <span class="kicker">ALL SKILLS</span>
-            <h2>全部 Skills</h2>
-            <p id="browseNote"></p>
-          </div>
-          <div class="sort-wrap">
-            <label for="sortSelect">排序</label>
-            <select id="sortSelect">
-              <option value="personal">为我推荐</option>
-              <option value="trend">趋势优先</option>
-              <option value="stars">星标最多</option>
-              <option value="recent">最近更新</option>
-              <option value="new">最新创建</option>
-              <option value="skills">技能数最多</option>
-              <option value="name">名称 A→Z</option>
-            </select>
-          </div>
-        </div>
-        <div class="filter-row">
-          <div class="chips" id="catChips"></div>
-          <label class="toggle"><input type="checkbox" id="skillOnly" /><span>仅 Skills 仓库</span></label>
-          <label class="toggle"><input type="checkbox" id="verifiedOnly" /><span>只看已核验 SKILL.md</span></label>
-        </div>
-        <div class="cards" id="cards"></div>
-        <div class="more-wrap"><button class="more" id="loadMore">加载更多</button></div>
-      </section>
-
-      <section class="block" id="about">
-        <div class="block-head">
-          <div>
-            <span class="kicker">DATA</span>
-            <h2>数据来源与核验</h2>
-          </div>
-        </div>
-        <div class="about-grid" id="aboutGrid"></div>
-      </section>
-
-      <footer class="foot">
-        <span>SkillAtlas · 数据来自 GitHub Search API 与 Git Tree API</span>
-        <span id="footStamp"></span>
-      </footer>
-    </div>
-  </main>
-</div>
-
-<div class="modal" id="modal">
-  <div class="modal-card">
-    <button class="modal-x" id="modalX">×</button>
-    <div id="modalBody"></div>
-  </div>
-</div>
-<div class="toast" id="toast"></div>
-
-<script src="./data/skills.js" onerror="window.__SKILL_DATA_MISSING__=1"></script>
-<script src="./main.js"></script>
-</body>
+    </main>
+    <dialog
+      class="detail-dialog"
+      id="detailDialog"
+      aria-labelledby="detailTitle"
+    >
+      <div class="dialog-inner">
+        <button
+          class="icon-button dialog-close"
+          id="closeDetail"
+          aria-label="关闭详情"
+        >
+          <span data-icon="close"></span>
+        </button>
+        <div id="detailBody"></div>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <noscript
+      ><p class="noscript">
+        请启用 JavaScript，以加载本地技能目录和搜索功能。
+      </p></noscript
+    >
+  </body>
 </html>

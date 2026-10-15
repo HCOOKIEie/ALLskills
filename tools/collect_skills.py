@@ -153,6 +153,7 @@ def phase_search(pages: int, min_stars: int) -> dict:
 
     found = dict(existing)
     request_index = 0
+    successful_requests = 0
     for query, sort, query_pages in SEARCH_QUERIES:
         for page in range(1, min(query_pages, pages) + 1):
             if request_index:
@@ -166,24 +167,29 @@ def phase_search(pages: int, min_stars: int) -> dict:
                 f"&sort={sort}&order=desc&per_page=100&page={page}"
             )
             data = api_get(url, "search", timeout=25)
-            if not isinstance(data, dict) or not data.get("items"):
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
                 if data == "TIMEOUT":
                     log(f"  [search] {query!r} p{page}: timeout, skipping")
                     continue
                 break
+            successful_requests += 1
             added = 0
             for item in data["items"]:
                 key = item["full_name"]
                 if key not in found:
                     added += 1
-                previous = found.get(key)
-                if previous is None or (item.get("stargazers_count") or 0) >= (previous.get("stargazers_count") or 0):
-                    found[key] = item
+                # Stars can decrease; retaining the previous higher count also
+                # froze descriptions, branches and push dates indefinitely.
+                found[key] = item
             log(f"  [search] {query!r} p{page}: +{added} (unique {len(found)})")
             if len(data["items"]) < 100:
                 break
 
     repos = [r for r in found.values() if (r.get("stargazers_count") or 0) >= min_stars]
+    if not successful_requests:
+        raise RuntimeError("All GitHub searches failed; preserving the previous data snapshot")
+    if not repos:
+        raise RuntimeError("No repositories collected; refusing to replace the data snapshot")
     RAW_FILE.write_text(
         json.dumps(
             {"fetchedAt": datetime.now(timezone.utc).isoformat(), "repos": repos},
@@ -204,10 +210,14 @@ MAX_REPO_KB = 400_000  # skip repos larger than ~400 MB: file trees are huge and
 
 def tree_skill_count(repo: dict):
     branch = repo.get("default_branch") or "main"
-    data = api_get(TREE_URL.format(full=repo["full_name"], branch=branch), "core", timeout=25)
+    data = api_get(TREE_URL.format(full=repo["full_name"], branch=urllib.parse.quote(branch, safe="")), "core", timeout=25)
     if data == "404":
-        return 0
+        # Inaccessible/deleted/empty is not evidence of zero skill files.
+        return None
     if not isinstance(data, dict) or "tree" not in data:
+        return None
+    if data.get("truncated"):
+        log(f"  [verify] {repo['full_name']}: truncated tree, skipping incomplete count")
         return None
     return sum(1 for node in data["tree"] if node.get("type") == "blob" and is_skill_file(node.get("path")))
 
@@ -216,6 +226,19 @@ def is_skill_file(path) -> bool:
     """True only for files literally named SKILL.md (any directory, any case)."""
     name = str(path or "").rsplit("/", 1)[-1]
     return name.lower() == "skill.md"
+
+
+def cache_is_fresh(entry: dict | None, repo: dict, now: datetime | None = None) -> bool:
+    """Retry failures after six hours; refresh successful indexes weekly or on push."""
+    if not entry or entry.get("pushedAt") != repo.get("pushed_at"):
+        return False
+    try:
+        checked = datetime.fromisoformat(entry.get("checkedAt", "").replace("Z", "+00:00"))
+        age = ((now or datetime.now(timezone.utc)) - checked).total_seconds()
+    except (ValueError, TypeError):
+        return False
+    ttl = 6 * 3600 if entry.get("error") or entry.get("miss") else 7 * 86400
+    return 0 <= age < ttl
 
 
 def phase_verify(budget: int, min_stars: int, recheck: bool = False, recheck_below: int = -1,
@@ -244,12 +267,12 @@ def phase_verify(budget: int, min_stars: int, recheck: bool = False, recheck_bel
     # Verify smaller, more recent, more starred repos first: they are the most
     # likely to be genuine skill collections and they return fast.
     if target_set:
-        pending = [r for r in repos if r["full_name"] in target_set and r["full_name"] not in cache]
+        pending = [r for r in repos if r["full_name"] in target_set]
     else:
         pending = [
             r
             for r in repos
-            if r["full_name"] not in cache
+            if not cache_is_fresh(cache.get(r["full_name"]), r)
             and (r.get("stargazers_count") or 0) >= min_stars
             and (r.get("size") or 0) <= MAX_REPO_KB
             and not r.get("archived")
@@ -261,6 +284,9 @@ def phase_verify(budget: int, min_stars: int, recheck: bool = False, recheck_bel
     # requests concurrently, while keeping the anonymous path conservative.
     # The cache is only written by the main thread so interrupted runs remain
     # valid JSON and can resume safely.
+    if not pending:
+        log("  [verify] all eligible repositories are already up to date")
+        return cache
     if budget <= 0 or rate_get("core_remaining") <= 2:
         log("  [verify] budget/quota guard before starting")
         return cache
@@ -279,10 +305,14 @@ def phase_verify(budget: int, min_stars: int, recheck: bool = False, recheck_bel
     with ThreadPoolExecutor(max_workers=worker_count) as pool:
         for repo, count in pool.map(work, batch):
             checked += 1
+            # A transient failure must not erase a previous successful count.
+            if count is None and cache.get(repo["full_name"], {}).get("skillCount") is not None:
+                continue
             cache[repo["full_name"]] = {
                 "skillCount": count,
                 "error": count is None,
                 "checkedAt": datetime.now(timezone.utc).isoformat(),
+                "pushedAt": repo.get("pushed_at"),
             }
             if count:
                 log(f"  [verify] {repo['full_name']}: {count} SKILL.md")
@@ -320,7 +350,7 @@ def _walk_skill_files(nodes, prefix="") -> int:
 def jsdelivr_scan(repo: dict):
     branch = repo.get("default_branch") or "main"
     request = urllib.request.Request(
-        JSDELIVR_URL.format(full=repo["full_name"], branch=branch),
+        JSDELIVR_URL.format(full=repo["full_name"], branch=urllib.parse.quote(branch, safe="")),
         headers={"User-Agent": UA},
     )
     try:
@@ -339,18 +369,21 @@ def phase_scan(workers: int, min_stars: int) -> dict:
     cache = json.loads(JSDELIVR_FILE.read_text(encoding="utf-8")) if JSDELIVR_FILE.exists() else {}
     pending = [
         r for r in repos
-        if r["full_name"] not in cache and (r.get("stargazers_count") or 0) >= min_stars
+        if not cache_is_fresh(cache.get(r["full_name"]), r) and (r.get("stargazers_count") or 0) >= min_stars
     ]
     log(f"{len(pending)} repositories pending jsDelivr scan")
     done = 0
     hits = 0
 
     def work(repo):
-        return repo["full_name"], jsdelivr_scan(repo)
+        return repo, jsdelivr_scan(repo)
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for full_name, count in pool.map(work, pending):
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, 32))) as pool:
+        for repo, count in pool.map(work, pending):
+            full_name = repo["full_name"]
             done += 1
+            if (count is None or count == "MISS") and cache.get(full_name, {}).get("skillCount") is not None:
+                continue
             if count == "MISS":
                 cache[full_name] = {"skillCount": None, "source": "jsdelivr", "miss": True,
                                     "checkedAt": datetime.now(timezone.utc).isoformat()}
@@ -362,6 +395,7 @@ def phase_scan(workers: int, min_stars: int) -> dict:
                                     "checkedAt": datetime.now(timezone.utc).isoformat()}
                 if count:
                     hits += 1
+            cache[full_name]["pushedAt"] = repo.get("pushed_at")
             if done % 100 == 0:
                 JSDELIVR_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
                 log(f"  [scan] {done}/{len(pending)} done, {hits} with SKILL.md")
@@ -450,6 +484,7 @@ def build_record(repo: dict, entry: dict) -> dict:
         "openIssues": repo.get("open_issues_count") or 0,
         "createdAt": repo.get("created_at"),
         "pushedAt": repo.get("pushed_at"),
+        "defaultBranch": repo.get("default_branch") or "main",
         "sizeKb": repo.get("size") or 0,
         "ageDays": round(age, 1),
         "starsPerDay": round(stars / age, 3),
@@ -508,9 +543,13 @@ def phase_emit(min_stars: int) -> dict:
         return {}
 
     repos = [r for r in repos if (r.get("stargazers_count") or 0) >= min_stars]
+    if not repos:
+        raise RuntimeError("Empty raw repository list; preserving the published snapshot")
     records = [build_record(r, merged(r["full_name"])) for r in repos]
     before = len(records)
     records = [r for r in records if is_relevant(r)]
+    if not records:
+        raise RuntimeError("No relevant repositories; preserving the published snapshot")
     log(f"relevance filter: {before} -> {len(records)}")
     for record in records:
         record["skillSignal"] = has_skill_signal(record)
