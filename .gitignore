@@ -2,6 +2,8 @@
 data/raw_repos.json
 data/verify_cache.json
 data/jsdelivr_cache.json
+data/star_history.json
+data/*.tmp
 data/_recheck_targets.txt
 
 # 站点构建产物

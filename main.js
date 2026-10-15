@@ -1,4 +1,4 @@
-/* SkillAtlas — static, offline-first UI. Network requests are always user initiated. */
+/* SkillAtlas — offline-first UI with automatic published snapshot checks. */
 (function () {
   "use strict";
   var C = window.SkillAtlas;
@@ -13,7 +13,7 @@
   var VIEWS = {
     discover: "发现灵感",
     browse: "全部 Skills",
-    ranking: "热门榜单",
+    ranking: "今日涨星",
     saved: "我的收藏",
     about: "关于与数据来源",
   };
@@ -114,7 +114,7 @@
     verifiedOnly: false,
     skillOnly: false,
     page: 1,
-    rank: "trend",
+    rank: "growth",
     goal: owns(C.GOALS, profile.goal) ? profile.goal : "all",
     layout: profile.layout === "list" ? "list" : "grid",
     dailyOffset: 0,
@@ -131,6 +131,9 @@
     detailRequest;
   var previousFocus;
   var sharedRequest;
+  var snapshotBusy = false,
+    lastSnapshotCheck = 0;
+  var AUTO_CHECK_INTERVAL = 15 * 60 * 1000;
   function exact(n) {
     return Number(n || 0).toLocaleString("en-US");
   }
@@ -346,7 +349,7 @@
     if (state.skillOnly) url.searchParams.set("skills", "1");
     if (state.sort !== "recommended") url.searchParams.set("sort", state.sort);
     if (state.goal !== "all") url.searchParams.set("goal", state.goal);
-    if (state.view === "ranking" && state.rank !== "trend")
+    if (state.view === "ranking" && state.rank !== "growth")
       url.searchParams.set("rank", state.rank);
     if (detailId) url.searchParams.set("skill", detailId);
     return url;
@@ -374,9 +377,11 @@
         ? p.get("sort")
         : "recommended";
     state.rank =
-      ["trend", "stars", "recent", "skills"].indexOf(p.get("rank")) !== -1
+      ["growth", "trend", "stars", "recent", "skills"].indexOf(
+        p.get("rank"),
+      ) !== -1
         ? p.get("rank")
-        : "trend";
+        : "growth";
     if (owns(C.GOALS, p.get("goal"))) state.goal = p.get("goal");
     state.view = owns(VIEWS, p.get("view"))
       ? p.get("view")
@@ -449,7 +454,10 @@
       .join("");
     $("#searchInput").value = state.q;
     $("#footerStamp").textContent =
-      "数据快照 " + dateLabel(state.meta.generatedAt);
+      "数据快照 " +
+      new Date(state.meta.generatedAt).toLocaleString("zh-CN", {
+        hour12: false,
+      });
     $("#goalChoices").innerHTML = Object.keys(C.GOALS)
       .map(function (key) {
         return (
@@ -565,6 +573,57 @@
         );
       })
       .join("");
+    renderDailyGrowthPreview();
+  }
+  function renderDailyGrowthPreview() {
+    var leaders = C.growthRanking(state.skills, 3);
+    $("#dailyGrowthPreview").innerHTML = leaders.length
+      ? leaders
+          .map(function (skill) {
+            return (
+              '<article class="recent-row">' +
+              avatar(skill, true) +
+              '<div class="recent-copy"><button data-open="' +
+              esc(skill.id) +
+              '">' +
+              esc(skill.name) +
+              "</button><small>" +
+              esc(skill.owner) +
+              '</small></div><span class="growth-value">+' +
+              exact(skill.starGrowth.delta) +
+              ' ★</span><button data-open="' +
+              esc(skill.id) +
+              '" aria-label="查看 ' +
+              esc(skill.name) +
+              '">' +
+              icon("arrow") +
+              "</button></article>"
+            );
+          })
+          .join("")
+      : '<div class="growth-warming"><span>' +
+        icon("chart") +
+        "</span><div><b>" +
+        growthEmptyTitle() +
+        "</b><p>" +
+        growthEmptyDescription() +
+        "</p></div></div>";
+  }
+  function growthEmptyTitle() {
+    var growth = state.meta.growth || {};
+    if (
+      Date.now() - Date.parse(state.meta.generatedAt) > 6 * 3600000 &&
+      growth.status === "ready"
+    )
+      return "等待新一轮星标观测";
+    return growth.comparableRepos
+      ? "本轮暂无符合条件的正增长 Skills"
+      : "星标基线积累中";
+  }
+  function growthEmptyDescription() {
+    return (state.meta.growth || {}).comparableRepos
+      ? "当前没有同时满足数据时效、Skills 线索和正增长条件的仓库。下一轮采集后会自动重新计算。"
+      : "后台持续保存真实星标。首次运行约一天后，具备完整对比样本的 Skills 会自动进入今日榜单。";
   }
   function renderCatalog() {
     var isCollection = state.view === "saved";
@@ -673,24 +732,56 @@
       : "";
   }
   function renderRanking() {
+    var daily = state.rank === "growth";
+    var growth = state.meta.growth || {};
+    $("#rankingTitle").textContent = daily
+      ? "今日涨星最快的 Skills"
+      : "被更多人发现的好工具";
+    $("#rankingNotice").textContent = daily
+      ? "按近 24 小时真实净增星标排序。使用间隔 21–27 小时中最接近 24 小时的两次采样，不估算缺失数据；只展示有 Skills 线索、未归档且净增为正的仓库。"
+      : "综合热度使用启发式评分；日均星标是累计星标 ÷ 仓库年龄，并非最近 24 小时增长。";
+    $("#growthCoverage").hidden = !daily;
+    $("#growthCoverage").textContent =
+      "更新于 " +
+      dateLabel(state.meta.generatedAt) +
+      " · 有对比样本 " +
+      exact(growth.comparableRepos || 0) +
+      " 个仓库 · 后台每 3 小时采集，页面自动检查更新";
     document.querySelectorAll("[data-rank]").forEach(function (button) {
       var active = state.rank === button.dataset.rank;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     });
-    $("#rankingList").innerHTML = C.sortSkills(state.skills, state.rank)
-      .slice(0, 30)
+    var list = daily
+      ? C.growthRanking(state.skills, 30)
+      : C.sortSkills(state.skills, state.rank).slice(0, 30);
+    if (daily && !list.length) {
+      $("#rankingList").innerHTML =
+        '<div class="empty-state"><span class="empty-icon">' +
+        icon("chart") +
+        "</span><h2>" +
+        growthEmptyTitle() +
+        "</h2><p>" +
+        growthEmptyDescription() +
+        '<br />历史样本不足或观测过期时，不使用生命周期均值代替今日涨星。</p><button class="button secondary" data-rank="trend">先看看综合热度 ' +
+        icon("arrow") +
+        "</button></div>";
+      return;
+    }
+    $("#rankingList").innerHTML = list
       .map(function (s, i) {
-        var value =
-          state.rank === "skills"
+        var value = daily
+          ? "+" + exact(s.starGrowth.delta) + " ★"
+          : state.rank === "skills"
             ? exact(s.skillCount) + " 个文件"
             : state.rank === "recent"
               ? ago(s.pushedAt)
               : state.rank === "stars"
                 ? "☆ " + compact(s.stars)
                 : exact(Math.round(s.trendScore));
-        var label =
-          state.rank === "skills"
+        var label = daily
+          ? "净增 · " + s.starGrowth.hours.toFixed(1) + " 小时"
+          : state.rank === "skills"
             ? "SKILL.md"
             : state.rank === "recent"
               ? "最近提交"
@@ -710,13 +801,36 @@
           esc(s.owner) +
           '</small></div></div><span class="tag ranking-category">' +
           esc(s.category) +
-          '</span><span class="ranking-value">' +
+          '</span><span class="ranking-value' +
+          (daily ? " growth-value" : "") +
+          '"' +
+          (daily
+            ? ' title="' +
+              esc(
+                "采样从 " +
+                  new Date(s.starGrowth.baselineAt).toLocaleString("zh-CN") +
+                  " 至 " +
+                  new Date(s.starGrowth.observedAt).toLocaleString("zh-CN"),
+              ) +
+              '"'
+            : "") +
+          ">" +
           esc(value) +
           "<small>" +
           label +
           '</small></span><span class="ranking-value ranking-files">' +
-          (s.verified ? exact(s.skillCount) : "—") +
-          "<small>技能文件</small></span>" +
+          (daily
+            ? s.starGrowth.percent == null
+              ? "—"
+              : s.starGrowth.percent < 0.01
+                ? "&lt;0.01%"
+                : "+" + s.starGrowth.percent.toFixed(2) + "%"
+            : s.verified
+              ? exact(s.skillCount)
+              : "—") +
+          (daily
+            ? "<small>星标涨幅</small></span>"
+            : "<small>技能文件</small></span>") +
           saveButton(s) +
           "</article>"
         );
@@ -1122,6 +1236,55 @@
           .join("")
       : '<p class="file-list-empty">没有匹配的技能文件。</p>';
   }
+  async function refreshPublishedSnapshot(manual) {
+    if (!state.ready || snapshotBusy) return;
+    snapshotBusy = true;
+    lastSnapshotCheck = Date.now();
+    $("#checkSnapshot").disabled = true;
+    $("#autoSyncText").textContent = "正在检查线上 Skills 快照…";
+    try {
+      var configured = $('meta[name="skillatlas-data-endpoint"]');
+      var endpoint =
+        location.protocol === "file:"
+          ? configured && configured.content
+          : new URL("./data/skills.json", location.href).href;
+      var result = await C.checkPublishedSnapshot(endpoint, state.meta);
+      if (result.changed) {
+        state.snapshot = result.skills;
+        state.meta = result.meta;
+        window.SKILL_DATA = { skills: state.snapshot, meta: state.meta };
+        // Preserve the current search, view, filters, collection, and open dialog.
+        state.q = $("#searchInput").value;
+        rebuildIndex();
+        renderCurrent();
+      }
+      var checked = new Date().toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      $("#autoSyncText").textContent =
+        (result.changed ? "已自动更新" : "已检查") +
+        " " +
+        checked +
+        " · 每 15 分钟检查 · 后台每 3 小时采集";
+      if (manual)
+        toast(
+          result.changed
+            ? "已加载最新的 Skills 和今日涨星榜"
+            : "已经是当前发布的最新快照",
+        );
+    } catch (_) {
+      $("#autoSyncText").textContent =
+        "线上更新暂不可用 · 保留当前快照，稍后自动重试";
+      if (manual) toast("暂时无法获取线上快照，现有搜索和收藏仍可使用。");
+    } finally {
+      if (state.view === "ranking") renderRanking();
+      else if (state.view === "discover") renderDailyGrowthPreview();
+      snapshotBusy = false;
+      $("#checkSnapshot").disabled = false;
+    }
+  }
   async function syncGitHub() {
     if (!state.ready || state.syncBusy) return;
     if (Date.now() - state.lastSync < 60000) {
@@ -1467,6 +1630,23 @@
     writeStore("skillatlas-theme", theme);
   });
   $("#syncNow").addEventListener("click", syncGitHub);
+  $("#checkSnapshot").addEventListener("click", function () {
+    refreshPublishedSnapshot(true);
+  });
+  setInterval(function () {
+    if (
+      document.visibilityState === "visible" &&
+      Date.now() - lastSnapshotCheck >= AUTO_CHECK_INTERVAL
+    )
+      refreshPublishedSnapshot(false);
+  }, AUTO_CHECK_INTERVAL);
+  document.addEventListener("visibilitychange", function () {
+    if (
+      document.visibilityState === "visible" &&
+      Date.now() - lastSnapshotCheck >= AUTO_CHECK_INTERVAL
+    )
+      refreshPublishedSnapshot(false);
+  });
   $("#exportSaved").addEventListener("click", exportSaved);
   $("#importSaved").addEventListener("change", function (event) {
     importSaved(event.target.files[0]);
@@ -1544,6 +1724,7 @@
       $("#loadingState").hidden = true;
       $("#appContent").hidden = false;
       if (wanted) openDetail(wanted, true);
+      refreshPublishedSnapshot(false);
     } catch (_) {
       $("#loadingState").hidden = true;
       $("#loadError").hidden = false;

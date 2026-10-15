@@ -10,9 +10,11 @@
 - **私人收藏**：保存在当前浏览器，离线可浏览；支持 JSON 导出与合并导入。清除浏览器存储会删除收藏，请定期备份。
 - **仓库详情**：查看元数据、核验来源与时间，复制分享链接和克隆命令，按需读取默认分支的 `SKILL.md` 路径。
 - **手动同步**：按当前目标从 GitHub 获取最多 20 个最新更新的仓库，合并到本次浏览和搜索；保留已有核验来源，新增仓库不会自动获得核验标记。
+- **自动更新**：后台每 3 小时发现新 Skills、刷新已收录仓库的星标与元数据并发布。页面启动时和保持可见时每 15 分钟检查更新，先读取轻量元数据，仅有新版本时下载完整目录。
+- **今日涨星榜**：使用近 24 小时的两次真实星标观测计算净增量，展示增量、涨幅与采样间隔。首次部署先积累基线，不把生命周期日均星标当成今日增长。
 - **浅色 / 深色外观**：首次跟随系统，手动切换后记住选择；无需联网加载字体，手机端提供抽屉导航和键盘支持。
 
-额外的 GitHub API 请求由手动同步、读取技能文件或打开未收录仓库的分享链接触发。页面首次打开直接加载随仓库提交的快照；头像是可选的远程资源，加载失败时显示本地文字占位。
+页面先加载随仓库提交的快照，再自动检查发布版本。额外的匿名 GitHub API 请求由手动同步、读取技能文件或打开未收录仓库的分享链接触发；批量采集使用 GitHub Actions 的服务端 token，浏览器不保存 token。头像加载失败时显示本地文字占位。
 
 ### 搜索示例
 
@@ -51,17 +53,18 @@ GitHub Actions 会在 push / pull request 时运行这些检查。浏览器验�
 是。页面上每一个条目都对应一个真实存在的 GitHub 仓库，链接直接指向该仓库。
 数据集由 `tools/collect_skills.py` 通过官方 API 采集生成，不是手写的演示数据。
 
-采集分四个阶段：
+采集分五个阶段：
 
-1. **search** — 用 GitHub Search API 跑 19 组关键词（`topic:claude-skills`、
+1. **search** — 用 GitHub Search API 跑 22 组搜索策略（`topic:claude-skills`、
    `topic:agent-skills`、`SKILL.md in:readme`、`topic:mcp-server` 等），
-   每页 100 条，去重后得到候选仓库。
-2. **verify** — 用 Git Tree API 递归读取仓库文件树，精确统计名为 `SKILL.md`
+   每页 100 条，包含按更新时间排序的新仓库发现，去重后得到候选仓库。
+2. **refresh** — 批量刷新已知仓库的元数据，记录每次成功响应的实际星标观测时间。失败时保留旧计数和旧观测时间，不伪造一次新采样。
+3. **verify** — 用 Git Tree API 递归读取仓库文件树，精确统计名为 `SKILL.md`
    的文件数量。这是最权威的口径，但匿名配额只有 60 次/小时。
-3. **scan** — 用 jsDelivr 的包文件索引做同样的统计。它镜像同一份 GitHub
+4. **scan** — 用 jsDelivr 的包文件索引做同样的统计。它镜像同一份 GitHub
    文件树，没有实际配额限制，因此可以把核验覆盖到全部两千多个仓库。
    GitHub 口径优先，镜像口径补位，页面上两者分开标注。
-4. **emit** — 合并元数据、剔除与 AI 无关的仓库、自动分类、计算趋势分，
+5. **emit** — 合并元数据、剔除与 AI 无关的仓库、自动分类、保存星标历史、计算今日涨星与综合热度，
    输出 `data/skills.json`、`data/meta.json` 和供 `file://` 直接加载的 `data/skills.js`。
 
 ## 目录结构
@@ -74,12 +77,14 @@ main.js                    页面导航、收藏、详情与按需同步
 favicon.svg                本地站点图标
 tests/                     检索和采集器的离线回归检查
 tools/collect_skills.py    采集器（可重复运行，增量缓存）
+tools/snapshot_state.py    发布快照和星标基线的持久化，不切换源代码分支
 data/skills.json           完整数据集
 data/skills.js             同一份数据，供 file:// 直接打开时使用
 data/raw_repos.json        GitHub 搜索结果原始快照
 data/verify_cache.json     GitHub 核验缓存，逐轮累积
 data/jsdelivr_cache.json   jsDelivr 全量核验缓存
 data/meta.json             采集统计
+data/star_history.json     近七天真实星标观测（保存在专用数据分支）
 ```
 
 ## 更新数据
@@ -88,12 +93,13 @@ Windows 下双击 `更新Skills数据.bat`，或手动执行：
 
 ```powershell
 python tools/collect_skills.py search   # 约 5 分钟，受 10 次/分钟限制
+python tools/collect_skills.py refresh  # 匿名默认更新 40 个旧仓库；token 默认 3000
 python tools/collect_skills.py verify   # 受 60 次/小时限制，可分多次跑
 python tools/collect_skills.py scan     # 免配额，约 6 分钟覆盖全部仓库
 python tools/collect_skills.py emit
 ```
 
-四个阶段互相独立且都有缓存，可以随时中断、下次接着跑。
+五个阶段互相独立且都有缓存，可以随时中断、下次接着跑。
 `verify` 每跑一轮就多核验一批仓库，缓存会累积结果；`scan` 一次即可覆盖全量。
 
 成功的核验缓存最多保留七天，仓库 push 时间变化时提前失效；失败缓存六小时后重试。网络失败保留上次成功的计数。GitHub 返回截断文件树或 404 时不写入“完整计数为零”的结论。空搜索或空输出会报错并保留现有快照。
@@ -110,6 +116,16 @@ python tools/collect_skills.py all --verify-budget 500
 
 ## 榜单口径
 
+**今日涨星** = 本次真实星标数 − 最接近 24 小时前的真实星标数。
+
+- 允许两次采样间隔在 21–27 小时之间，实际间隔在榜单上显示，完整起止时间放在提示中。
+- 只让有 Skills 线索、未归档、最新观测距今不超过 6 小时、净增为正的仓库参与；不会为新收录仓库假设“昨天为零”。
+- 涨幅 = 净增 ÷ 基线星标；基线为零时显示 `—`。
+- 没有足够历史时显示“星标基线积累中”；观测过期时等待新一轮采样，零增长或净减少不伪装成上榜增长。
+- 基线保留七天、每仓库最多 64 次观测，重复生成不增加相同时间的样本。
+
+**综合热度** 沿用原启发式指标：
+
 趋势分 = 星标 × 0.45 + 日均星标 × 55 + Fork × 0.5 + 活跃度 × 25
 
 - **日均星标** = 星标 / 仓库存在天数，用来让新项目有机会冒头
@@ -124,17 +140,21 @@ python tools/collect_skills.py all --verify-budget 500
 
 **开启 Pages**：仓库 `Settings → Pages → Build and deployment`，
 Source 选 **GitHub Actions**。之后 `.github/workflows/refresh.yml`
-每天自动跑一遍采集并发布，也可在 Actions 页面手动触发。
+每 3 小时自动采集并发布（UTC 每三小时的第 17 分钟），也可在 Actions 页面手动触发。定时任务需要工作流位于默认分支；GitHub 调度可能延后，不承诺秒级实时。
 
 两个设计取舍：
 
-- 刷新结果**只发布、不写回仓库**，所以每日更新不会让仓库体积膨胀。
+- 最新快照及 `star_history.json` 持久保存在独立的 `skillatlas-data` 分支。自动任务只写该分支，不向 `main` 提交数据；历史不会因为 Actions 缓存被清理而丢失。
 - 工作流用 Actions 自带的 `GITHUB_TOKEN`，配额远高于匿名访问，线上版本的
-  官方核验覆盖率比本地匿名跑高得多；采集失败会自动回退到已提交的快照。
+  官方核验覆盖率比本地匿名跑高得多；采集失败时回退到最近一次成功发布的快照。首次没有数据分支时使用源代码里随附的快照。
+
+工作流需要 `contents: write` 保存数据分支、Pages 发布权限和 `id-token: write`。`tools/snapshot_state.py` 只读写四个固定数据文件，使用正常的非强制 push，保留源代码检出与暂存区。
+
+线上页面从同源 `data/meta.json` 检查更新。本地 `file://` 页面使用 `index.html` 的 `skillatlas-data-endpoint` 指向 [GitHub Pages 数据](https://hcookieie.github.io/ALLskills/data/skills.json)；Fork 后应改为自己的发布地址。
 
 **仓库里不放什么**：`data/raw_repos.json`（十几 MB 原始搜索结果）、
 `data/verify_cache.json`、`data/jsdelivr_cache.json` 都是中间产物，
-已写进 `.gitignore`，本地首次运行采集器会重新生成。
+已写进 `.gitignore`，由 Actions 缓存加速，不写入源代码分支。缓存清理后会从已发布数据恢复仓库候选和上次核验记录。
 
 ## 已知边界
 
@@ -150,7 +170,7 @@ Source 选 **GitHub Actions**。之后 `.github/workflows/refresh.yml`
 
 ## 下一步可以做什么
 
-- 增加 stars 时间序列，把"趋势"从估算换成真实的增长速度。
+- 增加更长时间的涨星折线，以及按周比较的新兴 Skills。
 - 抓取 `SKILL.md` 正文，做技能级（而非仓库级）的检索与详情页。
 - 为 Skill 和分类生成静态页面，让内容能被搜索引擎收录。
 - 拆分数据集，首屏只加载轻量索引，详情按需拉取。

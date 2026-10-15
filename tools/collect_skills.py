@@ -45,6 +45,9 @@ if TOKEN:
     HEADERS["Authorization"] = f"Bearer {TOKEN}"
 
 SEARCH_QUERIES: list[tuple[str, str, int]] = [
+    ("topic:agent-skills", "updated", 1),
+    ("topic:claude-skills", "updated", 1),
+    ("topic:codex-skills", "updated", 1),
     ("topic:claude-skills", "stars", 3),
     ("topic:agent-skills", "stars", 3),
     ("topic:claude-code-skills", "stars", 2),
@@ -151,6 +154,27 @@ def phase_search(pages: int, min_stars: int) -> dict:
         except Exception:
             existing = {}
 
+    # A durable published snapshot can seed discovery after the Actions cache
+    # is evicted. Metadata is refreshed separately, including long-tail repos.
+    snapshot_file = DATA_DIR / "skills.json"
+    if snapshot_file.exists():
+        snapshot = json.loads(snapshot_file.read_text(encoding="utf-8"))
+        for record in snapshot.get("skills", []):
+            full_name = record["id"]
+            if full_name not in existing:
+                existing[full_name] = {
+                    "full_name": full_name, "name": record["name"],
+                    "description": record.get("description"), "topics": record.get("topics", []),
+                    "owner": {"login": record.get("owner"), "avatar_url": record.get("avatar")},
+                    "html_url": record.get("url"), "homepage": record.get("homepage"),
+                    "stargazers_count": record.get("stars", 0), "forks_count": record.get("forks", 0),
+                    "language": record.get("language"), "license": {"spdx_id": record.get("license")},
+                    "created_at": record.get("createdAt"), "pushed_at": record.get("pushedAt"),
+                    "default_branch": record.get("defaultBranch") or "main",
+                    "size": record.get("sizeKb", 0), "archived": record.get("archived", False),
+                    "_observedAt": record.get("observedAt") or snapshot.get("meta", {}).get("generatedAt"),
+                }
+
     found = dict(existing)
     request_index = 0
     successful_requests = 0
@@ -173,6 +197,7 @@ def phase_search(pages: int, min_stars: int) -> dict:
                     continue
                 break
             successful_requests += 1
+            observed_at = datetime.now(timezone.utc).isoformat()
             added = 0
             for item in data["items"]:
                 key = item["full_name"]
@@ -180,12 +205,12 @@ def phase_search(pages: int, min_stars: int) -> dict:
                     added += 1
                 # Stars can decrease; retaining the previous higher count also
                 # froze descriptions, branches and push dates indefinitely.
-                found[key] = item
+                found[key] = {**item, "_observedAt": observed_at}
             log(f"  [search] {query!r} p{page}: +{added} (unique {len(found)})")
             if len(data["items"]) < 100:
                 break
 
-    repos = [r for r in found.values() if (r.get("stargazers_count") or 0) >= min_stars]
+    repos = dedupe_repos([r for r in found.values() if (r.get("stargazers_count") or 0) >= min_stars])
     if not successful_requests:
         raise RuntimeError("All GitHub searches failed; preserving the previous data snapshot")
     if not repos:
@@ -200,6 +225,36 @@ def phase_search(pages: int, min_stars: int) -> dict:
     )
     log(f"saved {len(repos)} repositories (>= {min_stars} stars) to {RAW_FILE.name}")
     return {"repos": repos}
+
+
+def phase_refresh(budget: int, workers: int = 8) -> dict:
+    """Observe star counts for known repos, not just search's most popular hits."""
+    payload = json.loads(RAW_FILE.read_text(encoding="utf-8"))
+    repos = payload["repos"]
+    now = datetime.now(timezone.utc).timestamp()
+    pending = [r for r in repos if now - iso_timestamp(r.get("_observedAt")) > 1800]
+    pending.sort(key=lambda r: iso_timestamp(r.get("_observedAt")))
+    batch = pending[:max(0, budget)]
+    if not batch:
+        log("  [refresh] no stale metadata within this run's budget")
+        return payload
+    updates = {}
+
+    def work(repo):
+        data = api_get(f"https://api.github.com/repos/{repo['full_name']}", "core", timeout=20)
+        if isinstance(data, dict) and data.get("full_name") and isinstance(data.get("stargazers_count"), int):
+            return repo["full_name"], {**data, "_observedAt": datetime.now(timezone.utc).isoformat()}
+        return repo["full_name"], None
+
+    log(f"  [refresh] observing {len(batch)} repositories")
+    with ThreadPoolExecutor(max_workers=max(1, min(workers if TOKEN else 1, 12))) as pool:
+        for full_name, data in pool.map(work, batch):
+            if data:
+                updates[full_name] = data
+    payload["repos"] = dedupe_repos([updates.get(r["full_name"], r) for r in repos])
+    RAW_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    log(f"  [refresh] observed {len(updates)}/{len(batch)}; failed requests keep their previous observation time")
+    return payload
 
 
 # ---------------------------------------------------------------- verify
@@ -484,6 +539,7 @@ def build_record(repo: dict, entry: dict) -> dict:
         "openIssues": repo.get("open_issues_count") or 0,
         "createdAt": repo.get("created_at"),
         "pushedAt": repo.get("pushed_at"),
+        "observedAt": repo.get("_observedAt"),
         "defaultBranch": repo.get("default_branch") or "main",
         "sizeKb": repo.get("size") or 0,
         "ageDays": round(age, 1),
@@ -527,10 +583,95 @@ def has_skill_signal(record: dict) -> bool:
     return bool(SKILL_WORD.search(" ".join([record["name"], record["description"], " ".join(record["topics"])])))
 
 
+def iso_timestamp(value) -> float:
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return moment.timestamp() if moment.tzinfo else 0
+    except (ValueError, TypeError, OverflowError):
+        return 0
+
+
+def dedupe_repos(repos: list[dict]) -> list[dict]:
+    """A rename or owner-case change must not create duplicate directory rows."""
+    seen_names, seen_ids, result = set(), set(), []
+    for repo in sorted(repos, key=lambda r: iso_timestamp(r.get("_observedAt")), reverse=True):
+        name = repo["full_name"].lower()
+        repo_id = repo.get("id")
+        if name in seen_names or (repo_id is not None and repo_id in seen_ids):
+            continue
+        seen_names.add(name)
+        if repo_id is not None:
+            seen_ids.add(repo_id)
+        result.append(repo)
+    return result
+
+
+def update_star_history(records: list[dict], history: dict, now: datetime | None = None) -> dict:
+    """Compare actual observations 21–27 hours apart; never extrapolate missing samples."""
+    now = now or datetime.now(timezone.utc)
+    timestamp = now.timestamp()
+    cutoff = timestamp - 7 * 86400
+    previous = history.get("repos", {})
+    if history.get("version", 1) != 1 or not isinstance(previous, dict):
+        raise ValueError("Unsupported or invalid star history; refusing to discard its baseline")
+    next_repos = {}
+    comparable = 0
+    positive = 0
+    fresh = 0
+    first_observed = []
+    for record in records:
+        key = record["id"].lower()
+        samples = {}
+        for sample in previous.get(key, []):
+            if not isinstance(sample, list) or len(sample) != 2:
+                continue
+            t, stars = sample
+            if isinstance(t, (int, float)) and isinstance(stars, int) and stars >= 0 and cutoff <= t <= timestamp + 300:
+                samples[int(t)] = stars
+        observed = int(iso_timestamp(record.get("observedAt")))
+        if cutoff <= observed <= timestamp + 300:
+            samples[observed] = int(record["stars"])
+        ordered = sorted(samples.items())[-64:]
+        record["starGrowth"] = None
+        if ordered:
+            next_repos[key] = [[t, count] for t, count in ordered]
+            first_observed.append(ordered[0][0])
+        # A previous count or an old snapshot is not a current observation.
+        if observed <= 0 or timestamp - observed > 6 * 3600 or observed > timestamp + 300:
+            continue
+        fresh += 1
+        candidates = [(t, stars) for t, stars in ordered if 21 * 3600 <= observed - t <= 27 * 3600]
+        if not candidates:
+            continue
+        baseline_time, baseline_stars = min(candidates, key=lambda row: abs(observed - row[0] - 86400))
+        delta = int(record["stars"]) - baseline_stars
+        record["starGrowth"] = {
+            "delta": delta,
+            "percent": round(delta / baseline_stars * 100, 2) if baseline_stars else None,
+            "baselineStars": baseline_stars,
+            "baselineAt": datetime.fromtimestamp(baseline_time, timezone.utc).isoformat(),
+            "observedAt": datetime.fromtimestamp(observed, timezone.utc).isoformat(),
+            "hours": round((observed - baseline_time) / 3600, 2),
+        }
+        comparable += 1
+        positive += delta > 0
+    history.clear()
+    history.update({"version": 1, "updatedAt": now.isoformat(), "repos": next_repos})
+    return {"windowHours": 24, "toleranceHours": 3, "comparableRepos": comparable,
+            "positiveRepos": positive, "freshRepos": fresh, "trackedRepos": len(next_repos),
+            "firstObservedAt": datetime.fromtimestamp(min(first_observed), timezone.utc).isoformat() if first_observed else None,
+            "status": "ready" if comparable else "warming"}
+
+
 def phase_emit(min_stars: int) -> dict:
     repos = json.loads(RAW_FILE.read_text(encoding="utf-8"))["repos"]
+    if not repos:
+        raise RuntimeError("Empty raw repository list; preserving the published snapshot")
     cache = json.loads(CACHE_FILE.read_text(encoding="utf-8")) if CACHE_FILE.exists() else {}
     jcache = json.loads(JSDELIVR_FILE.read_text(encoding="utf-8")) if JSDELIVR_FILE.exists() else {}
+    previous_file = DATA_DIR / "skills.json"
+    previous = json.loads(previous_file.read_text(encoding="utf-8")) if previous_file.exists() else {}
+    previous_records = {r["id"]: r for r in previous.get("skills", [])}
 
     def merged(full_name: str) -> dict:
         """Prefer the authoritative GitHub tree count, fall back to the jsDelivr mirror."""
@@ -540,9 +681,12 @@ def phase_emit(min_stars: int) -> dict:
         mirror = jcache.get(full_name) or {}
         if mirror.get("skillCount") is not None:
             return {**mirror, "source": "jsdelivr"}
+        old = previous_records.get(full_name, {})
+        if old.get("skillCount") is not None:
+            return {"skillCount": old["skillCount"], "source": old.get("verifiedSource"), "checkedAt": old.get("verifiedAt")}
         return {}
 
-    repos = [r for r in repos if (r.get("stargazers_count") or 0) >= min_stars]
+    repos = dedupe_repos([r for r in repos if (r.get("stargazers_count") or 0) >= min_stars])
     if not repos:
         raise RuntimeError("Empty raw repository list; preserving the published snapshot")
     records = [build_record(r, merged(r["full_name"])) for r in repos]
@@ -553,6 +697,9 @@ def phase_emit(min_stars: int) -> dict:
     log(f"relevance filter: {before} -> {len(records)}")
     for record in records:
         record["skillSignal"] = has_skill_signal(record)
+    history_file = DATA_DIR / "star_history.json"
+    history = json.loads(history_file.read_text(encoding="utf-8")) if history_file.exists() else {"version": 1, "repos": {}}
+    growth_meta = update_star_history(records, history)
     records.sort(key=lambda r: r["trendScore"], reverse=True)
 
     counts: dict[str, int] = {}
@@ -579,15 +726,23 @@ def phase_emit(min_stars: int) -> dict:
             "skillsCounted": sum((r["skillCount"] or 0) for r in records),
             "minStars": min_stars,
             "categoryCounts": counts,
+            "growth": growth_meta,
+            "refreshIntervalHours": 3,
         },
         "skills": records,
     }
-    (DATA_DIR / "skills.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-    (DATA_DIR / "meta.json").write_text(json.dumps(payload["meta"], ensure_ascii=False, indent=1), encoding="utf-8")
-    (DATA_DIR / "skills.js").write_text(
-        "window.SKILL_DATA=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + ";\n",
-        encoding="utf-8",
-    )
+    outputs = {
+        DATA_DIR / "skills.json": json.dumps(payload, ensure_ascii=False, indent=1),
+        DATA_DIR / "meta.json": json.dumps(payload["meta"], ensure_ascii=False, indent=1),
+        DATA_DIR / "skills.js": "window.SKILL_DATA=" + json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + ";\n",
+        history_file: json.dumps(history, ensure_ascii=False, separators=(",", ":")),
+    }
+    # Write every file fully before publishing any of them. Each replacement is
+    # atomic, so an interrupted write cannot leave truncated JSON in a snapshot.
+    for path, content in outputs.items():
+        path.with_name(path.name + ".tmp").write_text(content, encoding="utf-8")
+    for path in outputs:
+        path.with_name(path.name + ".tmp").replace(path)
     log(f"emitted {len(records)} repositories, {len(verified)} verified, "
         f"{payload['meta']['skillsCounted']} SKILL.md files")
     return payload
@@ -596,10 +751,11 @@ def phase_emit(min_stars: int) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("phase", nargs="?", default="all",
-                        choices=["search", "verify", "scan", "emit", "all"])
+                        choices=["search", "refresh", "verify", "scan", "emit", "all"])
     parser.add_argument("--pages", type=int, default=2)
     parser.add_argument("--min-stars", type=int, default=3)
     parser.add_argument("--verify-budget", type=int, default=40)
+    parser.add_argument("--refresh-budget", type=int, default=3000 if TOKEN else 40)
     parser.add_argument("--workers", type=int, default=10, help="parallel workers for verification and jsDelivr scan")
     parser.add_argument("--recheck", action="store_true", help="ignore cached verification results")
     parser.add_argument("--recheck-below", type=int, default=-1,
@@ -611,6 +767,9 @@ def main() -> int:
     if args.phase in ("search", "all"):
         log("== phase: search ==")
         phase_search(args.pages, args.min_stars)
+    if args.phase in ("refresh", "all"):
+        log("== phase: refresh metadata and star observations ==")
+        phase_refresh(args.refresh_budget, args.workers)
     if args.phase in ("verify", "all"):
         log("== phase: verify ==")
         phase_verify(args.verify_budget, args.min_stars, args.recheck, args.recheck_below, args.targets, args.workers)

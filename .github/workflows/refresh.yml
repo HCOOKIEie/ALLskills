@@ -1,35 +1,38 @@
 name: Refresh data and deploy
 
-# 每天 UTC 02:00（北京时间 10:00）自动刷新一次，也可以手动触发。
+# 每三小时自动发现新仓库、观测星标、更新页面，也可以手动触发。
 # Actions 里的 GITHUB_TOKEN 配额远高于匿名访问，足以用官方 Git Tree API
-# 核验绝大多数仓库；刷新结果不会写回版本库，只发布到 Pages，
-# 这样仓库体积不会随每日更新膨胀。
+# 历史与最新快照持久保存在 skillatlas-data 分支，不修改 main 源代码。
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "17 */3 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Restore the last published snapshot and durable star baseline
+        run: python tools/snapshot_state.py restore
 
       - name: Restore incremental collection caches
         uses: actions/cache@v4
@@ -38,19 +41,29 @@ jobs:
             data/raw_repos.json
             data/verify_cache.json
             data/jsdelivr_cache.json
-          key: skillatlas-data-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: skillatlas-data-
+          key: skillatlas-collection-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: skillatlas-collection-v2-
 
-      - name: Collect GitHub skills data
+      - name: Discover skills, observe current stars, and build the measured ranking
+        id: collect
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 采集失败时不阻断发布，退回仓库里已提交的快照。
         continue-on-error: true
         run: |
           python tools/collect_skills.py search --pages 2 --min-stars 3
+          python tools/collect_skills.py refresh --refresh-budget 3500 --workers 8
           python tools/collect_skills.py verify --verify-budget 400
           python tools/collect_skills.py scan --workers 12 --min-stars 3
           python tools/collect_skills.py emit --min-stars 3
+
+      - name: Preserve the new snapshot and star history
+        if: steps.collect.outcome == 'success'
+        run: python tools/snapshot_state.py persist
+
+      - name: Record collection fallback
+        if: steps.collect.outcome != 'success'
+        run: echo "Collection failed; deploying the last valid snapshot without inventing new observations." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stage site
         run: |

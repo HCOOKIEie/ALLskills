@@ -453,6 +453,65 @@ h3 {
   padding: 0 48px;
   margin: auto;
 }
+.auto-sync-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px clamp(20px, 3.5vw, 48px);
+  color: var(--secondary);
+  background: var(--soft);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.auto-sync-status > span {
+  min-width: 0;
+}
+.auto-sync-status button {
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 3px 0;
+}
+.growth-coverage {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 15px 0;
+  line-height: 1.9;
+}
+.ranking-row .growth-value,
+.recent-row .growth-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+.growth-warming {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: var(--soft);
+}
+.growth-warming > span {
+  display: inline-flex;
+  color: var(--accent);
+}
+.growth-warming b {
+  font-size: 13px;
+  font-weight: 500;
+}
+.growth-warming p {
+  font-size: 11px;
+  color: var(--secondary);
+  margin-top: 5px;
+  line-height: 1.9;
+}
+.ranking-tabs {
+  overflow-x: auto;
+}
+.ranking-tabs button {
+  white-space: nowrap;
+}
 .eyebrow {
   font-size: 10px;
   letter-spacing: 1.8px;

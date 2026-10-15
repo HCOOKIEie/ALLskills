@@ -8,6 +8,10 @@
       content="发现适合你的 AI Agent Skills。探索真实 GitHub 仓库，按任务筛选、查看技能文件，收藏下一次灵感。"
     />
     <meta name="theme-color" content="#f7f8fa" />
+    <meta
+      name="skillatlas-data-endpoint"
+      content="https://hcookieie.github.io/ALLskills/data/skills.json"
+    />
     <title>SkillAtlas · 发现 AI 的更多可能</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
@@ -43,7 +47,7 @@
           >
         </button>
         <button class="nav-item" data-view="ranking">
-          <span data-icon="trend"></span>热门榜单
+          <span data-icon="trend"></span>今日涨星
         </button>
         <button class="nav-item" data-view="saved">
           <span data-icon="bookmark"></span>我的收藏<span
@@ -120,6 +124,10 @@
           ><span data-icon="github"></span
         ></a>
       </header>
+      <div class="auto-sync-status" id="autoSyncStatus" role="status">
+        <span id="autoSyncText">自动更新已开启 · 每 15 分钟检查线上快照</span
+        ><button id="checkSnapshot">立即检查</button>
+      </div>
 
       <div class="page-wrap">
         <div id="loadingState" class="loading-state" role="status">
@@ -248,6 +256,21 @@
               </div>
               <div class="recent-list" id="recentList"></div>
             </section>
+            <section
+              class="recent-section"
+              aria-labelledby="dailyGrowthHeading"
+            >
+              <div class="section-heading">
+                <div>
+                  <h2 id="dailyGrowthHeading">今天，谁在快速成长？</h2>
+                  <p>近 24 小时真实净增星标，发现正在被更多人使用的 Skills。</p>
+                </div>
+                <button class="text-button" data-view="ranking">
+                  今日涨星榜 <span data-icon="arrow"></span>
+                </button>
+              </div>
+              <div id="dailyGrowthPreview" class="recent-list"></div>
+            </section>
           </section>
 
           <section
@@ -338,24 +361,27 @@
             <div class="page-heading">
               <div>
                 <span class="eyebrow">GOOD THINGS GET NOTICED</span>
-                <h1 id="rankingTitle">被更多人发现的好工具</h1>
-                <p>人气是参考，适合你才是答案。</p>
+                <h1 id="rankingTitle">今日涨星最快的 Skills</h1>
+                <p>看看过去一天，哪些工具正在被更多人发现。</p>
               </div>
             </div>
             <div class="ranking-notice">
               <span data-icon="info"></span>
-              <p>
+              <p id="rankingNotice">
                 这里的「综合热度」是基于快照的启发式评分。日均星标为累计星标 ÷
                 仓库年龄，并非最近 24 小时增长。
               </p>
             </div>
             <div class="ranking-tabs" id="rankTabs">
-              <button class="active" data-rank="trend" aria-pressed="true">
-                综合热度</button
+              <button class="active" data-rank="growth" aria-pressed="true">
+                今日涨星
+              </button>
+              <button data-rank="trend" aria-pressed="false">综合热度</button
               ><button data-rank="stars" aria-pressed="false">星标最多</button
               ><button data-rank="recent" aria-pressed="false">最近更新</button
               ><button data-rank="skills" aria-pressed="false">技能文件</button>
             </div>
+            <p class="growth-coverage" id="growthCoverage"></p>
             <div class="ranking-list" id="rankingList"></div>
           </section>
 
@@ -400,14 +426,17 @@
               </article>
               <article class="about-card">
                 <span class="about-icon violet" data-icon="clock"></span>
-                <h2>快照与手动同步</h2>
+                <h2>自动采集与今日涨星</h2>
                 <p>
-                  完整数据在采集时生成；「同步 GitHub」按当前目标读取最多 20
-                  个最近更新的仓库并合并到本次浏览。同步结果不写回仓库，也不会把未核验的结果标为已核验。
+                  GitHub Actions 每 3 小时发现新
+                  Skills、刷新仓库元数据并发布。页面打开时，以及保持可见时每 15
+                  分钟，会检查线上快照并自动应用更新；离线时保留已加载的数据。
                 </p>
                 <p>
-                  GitHub API
-                  有匿名配额。离线或额度不足时，你仍然可以搜索快照、收藏和浏览已有数据。
+                  今日涨星使用间隔 21–27 小时、最接近 24
+                  小时的两次真实星标采样计算净增量，不按仓库年龄估算。仅有
+                  Skills 线索、当前观测不超过 6
+                  小时且净增为正的仓库参与。初次运行需要积累约一天的基线。
                 </p>
               </article>
               <article class="about-card">

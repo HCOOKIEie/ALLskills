@@ -118,6 +118,8 @@
       skillSignal: !!record.skillSignal || skillCount > 0,
       createdAt: record.createdAt || null,
       pushedAt: record.pushedAt || null,
+      observedAt: record.observedAt || null,
+      starGrowth: normalizeGrowth(record.starGrowth),
       defaultBranch: String(record.defaultBranch || ""),
       archived: !!record.archived,
       starsPerDay: finite(record.starsPerDay),
@@ -125,6 +127,53 @@
       avatar: safeUrl(record.avatar),
       live: !!record.live,
     };
+  }
+  function normalizeGrowth(growth) {
+    if (
+      !growth ||
+      !Number.isInteger(growth.delta) ||
+      !Number.isInteger(growth.baselineStars) ||
+      growth.baselineStars < 0
+    )
+      return null;
+    var start = Date.parse(growth.baselineAt),
+      end = Date.parse(growth.observedAt);
+    var hours = (end - start) / 3600000;
+    if (
+      !Number.isFinite(hours) ||
+      hours < 21 ||
+      hours > 27 ||
+      growth.baselineStars + growth.delta < 0
+    )
+      return null;
+    return {
+      delta: growth.delta,
+      baselineStars: growth.baselineStars,
+      percent: growth.baselineStars
+        ? (growth.delta / growth.baselineStars) * 100
+        : null,
+      baselineAt: new Date(start).toISOString(),
+      observedAt: new Date(end).toISOString(),
+      hours: hours,
+    };
+  }
+  function growthRanking(list, limit, now) {
+    now = now || Date.now();
+    return sortSkills(
+      list.filter(function (skill) {
+        var growth = skill.starGrowth;
+        var age = growth ? now - Date.parse(growth.observedAt) : Infinity;
+        return (
+          skill.skillSignal &&
+          !skill.archived &&
+          growth &&
+          growth.delta > 0 &&
+          age >= -300000 &&
+          age <= 6 * 3600000
+        );
+      }),
+      "growth",
+    ).slice(0, limit || 30);
   }
   var SYNONYMS = {
     前端: ["frontend", "front-end", "react", "vue", "前端"],
@@ -222,6 +271,10 @@
     return list.slice().sort(function (a, b) {
       var diff;
       if (sort === "stars") diff = b.stars - a.stars;
+      else if (sort === "growth")
+        diff =
+          (b.starGrowth ? b.starGrowth.delta : -Infinity) -
+          (a.starGrowth ? a.starGrowth.delta : -Infinity);
       else if (sort === "recent") diff = time(b.pushedAt) - time(a.pushedAt);
       else if (sort === "new") diff = time(b.createdAt) - time(a.createdAt);
       else if (sort === "skills")
@@ -261,6 +314,8 @@
     );
     live.forEach(function (skill) {
       var previous = merged.get(skill.id.toLowerCase());
+      if (previous && time(previous.observedAt) > time(skill.observedAt))
+        return;
       merged.set(
         skill.id.toLowerCase(),
         previous
@@ -270,6 +325,7 @@
               verifiedAt: previous.verifiedAt,
               verifiedSource: previous.verifiedSource,
               skillSignal: previous.skillSignal || skill.skillSignal,
+              starGrowth: previous.starGrowth,
             })
           : skill,
       );
@@ -317,6 +373,7 @@
       forks: forks,
       createdAt: repo.created_at,
       pushedAt: repo.pushed_at,
+      observedAt: new Date().toISOString(),
       defaultBranch: repo.default_branch,
       skillSignal: /\bskills?\b|agent[-_]skill/i.test(text),
       starsPerDay: stars / age,
@@ -379,6 +436,56 @@
     }
     return picks;
   }
+  async function checkPublishedSnapshot(endpoint, currentMeta, fetcher) {
+    fetcher = fetcher || fetch;
+    var source = safeUrl(endpoint);
+    if (!source) throw new Error("Invalid snapshot endpoint");
+    var metadataUrl = new URL(source);
+    metadataUrl.pathname = metadataUrl.pathname.replace(/[^/]+$/, "meta.json");
+    var controller = new AbortController();
+    var timeout = setTimeout(function () {
+      controller.abort();
+    }, 15000);
+    try {
+      var options = { signal: controller.signal, cache: "no-cache" };
+      var response = await fetcher(metadataUrl.href, options);
+      if (!response.ok) throw new Error("Snapshot metadata unavailable");
+      var meta = await response.json();
+      if (!meta || !Number.isFinite(Date.parse(meta.generatedAt)))
+        throw new Error("Invalid snapshot metadata");
+      if (time(meta.generatedAt) <= time((currentMeta || {}).generatedAt))
+        return { changed: false, meta: meta };
+      response = await fetcher(source, options);
+      if (!response.ok) throw new Error("Snapshot unavailable");
+      var payload = await response.json();
+      if (
+        !payload ||
+        !payload.meta ||
+        time(payload.meta.generatedAt) < time(meta.generatedAt) ||
+        !Array.isArray(payload.skills) ||
+        !payload.skills.length ||
+        payload.skills.length > 50000
+      )
+        throw new Error("Snapshot is incomplete or older than its metadata");
+      var skills = payload.skills.map(normalize);
+      if (
+        skills.some(function (skill) {
+          return !skill;
+        }) ||
+        new Set(
+          skills.map(function (skill) {
+            return skill.id.toLowerCase();
+          }),
+        ).size !== skills.length ||
+        (payload.meta.reposKept != null &&
+          payload.meta.reposKept !== skills.length)
+      )
+        throw new Error("Invalid snapshot records");
+      return { changed: true, meta: payload.meta, skills: skills };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   return {
     CATEGORIES: CATEGORIES,
     GOALS: GOALS,
@@ -393,5 +500,8 @@
     mergeSkills: mergeSkills,
     recommendationScore: recommendationScore,
     dailyPicks: dailyPicks,
+    growthRanking: growthRanking,
+    normalizeGrowth: normalizeGrowth,
+    checkPublishedSnapshot: checkPublishedSnapshot,
   };
 });

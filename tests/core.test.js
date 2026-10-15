@@ -20,6 +20,128 @@ const fixture = (overrides = {}) =>
     ...overrides,
   });
 
+const observedNow = Date.parse("2026-10-15T12:00:00Z");
+const growth = (delta, overrides = {}) => ({
+  delta,
+  baselineStars: 1000,
+  baselineAt: "2026-10-14T12:00:00Z",
+  observedAt: "2026-10-15T12:00:00Z",
+  ...overrides,
+});
+
+test("today ranking sorts actual gains, excludes stale samples, losses, archives and non-Skills", () => {
+  const records = [
+    fixture({ id: "one/skill", stars: 900000, starGrowth: growth(5) }),
+    fixture({ id: "two/skill", stars: 1200, starGrowth: growth(200) }),
+    fixture({ id: "loss/skill", starGrowth: growth(-10) }),
+    fixture({
+      id: "old/skill",
+      starGrowth: growth(1000, {
+        baselineAt: "2026-10-13T12:00:00Z",
+        observedAt: "2026-10-14T12:00:00Z",
+      }),
+    }),
+    fixture({ id: "archive/skill", archived: true, starGrowth: growth(5000) }),
+    fixture({
+      id: "other/tool",
+      verified: false,
+      skillCount: null,
+      skillSignal: false,
+      starGrowth: growth(5000),
+    }),
+  ];
+  assert.deepEqual(
+    C.growthRanking(records, 30, observedNow).map((s) => s.id),
+    ["two/skill", "one/skill"],
+  );
+  assert.equal(
+    C.normalizeGrowth(growth(10, { baselineAt: "2026-10-15T00:00:00Z" })),
+    null,
+  );
+  assert.equal(
+    C.normalizeGrowth(growth(10, { baselineStars: 0 })).percent,
+    null,
+  );
+  assert.equal(C.normalizeGrowth(growth(100, { percent: 999 })).percent, 10);
+});
+
+test("a newer published observation replaces stale live metadata while live sync retains measured gains", () => {
+  const snapshot = fixture({
+    stars: 1100,
+    observedAt: "2026-10-15T12:00:00Z",
+    starGrowth: growth(100),
+  });
+  const oldLive = fixture({
+    stars: 1000,
+    observedAt: "2026-10-15T09:00:00Z",
+    live: true,
+  });
+  assert.equal(C.mergeSkills([snapshot], [oldLive])[0].stars, 1100);
+  const newLive = fixture({
+    stars: 1110,
+    observedAt: "2026-10-15T13:00:00Z",
+    live: true,
+  });
+  const merged = C.mergeSkills([snapshot], [newLive])[0];
+  assert.equal(merged.stars, 1110);
+  assert.equal(merged.starGrowth.delta, 100);
+  assert.equal(merged.starGrowth.observedAt, "2026-10-15T12:00:00.000Z");
+});
+
+test("automatic checks download metadata only when the published snapshot has not advanced", async () => {
+  const urls = [];
+  const fetcher = async (url) => {
+    urls.push(url);
+    return {
+      ok: true,
+      json: async () => ({ generatedAt: "2026-10-15T12:00:00Z" }),
+    };
+  };
+  const result = await C.checkPublishedSnapshot(
+    "https://example.com/data/skills.json",
+    { generatedAt: "2026-10-15T12:00:00Z" },
+    fetcher,
+  );
+  assert.equal(result.changed, false);
+  assert.deepEqual(urls, ["https://example.com/data/meta.json"]);
+});
+
+test("automatic updates adopt a complete newer dataset and reject partial or inconsistent responses", async () => {
+  const meta = { generatedAt: "2026-10-15T12:00:00Z", reposKept: 1 };
+  let body = { meta, skills: [fixture()] };
+  const fetcher = async (url) => ({
+    ok: true,
+    json: async () => (url.endsWith("meta.json") ? meta : body),
+  });
+  const current = { generatedAt: "2026-10-14T12:00:00Z" };
+  const result = await C.checkPublishedSnapshot(
+    "https://example.com/data/skills.json",
+    current,
+    fetcher,
+  );
+  assert.equal(result.changed, true);
+  assert.equal(result.skills.length, 1);
+  body = { meta, skills: [] };
+  await assert.rejects(
+    C.checkPublishedSnapshot(
+      "https://example.com/data/skills.json",
+      current,
+      fetcher,
+    ),
+  );
+  body = { meta: { generatedAt: "2026-10-13T12:00:00Z" }, skills: [fixture()] };
+  await assert.rejects(
+    C.checkPublishedSnapshot(
+      "https://example.com/data/skills.json",
+      current,
+      fetcher,
+    ),
+  );
+  await assert.rejects(
+    C.checkPublishedSnapshot("javascript:alert(1)", current, fetcher),
+  );
+});
+
 test("multi-term, quoted, field and exclusion search compose with AND", () => {
   const records = [
     fixture(),
