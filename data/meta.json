@@ -1,0 +1,41 @@
+{
+ "generatedAt": "2026-10-15T07:57:17.296849+00:00",
+ "source": "GitHub Search API + Git Tree API + jsDelivr file index",
+ "authenticated": true,
+ "queries": 22,
+ "reposKept": 2704,
+ "reposFilteredOut": 38,
+ "verifiedRepos": 1666,
+ "verifiedBySource": {
+  "jsdelivr": 1457,
+  "github-tree": 209
+ },
+ "skillSignalRepos": 2081,
+ "skillsCounted": 58088,
+ "minStars": 3,
+ "categoryCounts": {
+  "数据科学": 270,
+  "Agent 框架": 169,
+  "科研学术": 233,
+  "编程开发": 744,
+  "其他": 37,
+  "集成连接": 537,
+  "设计创意": 353,
+  "文档办公": 113,
+  "浏览器自动化": 81,
+  "写作内容": 119,
+  "效率工具": 42,
+  "生物医药": 6
+ },
+ "growth": {
+  "windowHours": 24,
+  "toleranceHours": 3,
+  "comparableRepos": 0,
+  "positiveRepos": 0,
+  "freshRepos": 2690,
+  "trackedRepos": 2690,
+  "firstObservedAt": "2026-10-15T07:51:32+00:00",
+  "status": "warming"
+ },
+ "refreshIntervalHours": 3
+}
