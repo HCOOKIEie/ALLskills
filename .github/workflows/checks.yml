@@ -22,6 +22,10 @@ jobs:
         run: |
           node --check main.js
           node --check core.js
-          node --test tests/core.test.js
+          node --check covers.js
+          npm ci --no-audit --no-fund
+          npm run build:scene
+          git diff --exit-code -- scene.js scene.js.LEGAL.txt
+          npm test
       - name: Check collector reliability without external requests
         run: python -m unittest discover -s tests -p 'test_*.py' -v

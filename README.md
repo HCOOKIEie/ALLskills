@@ -5,6 +5,10 @@
 
 ## 新版体验
 
+- **空间档案馆**：首页用 Three.js 实时渲染玻璃技能架，21 个真实仓库组成一次可浏览的选集；卡片选择、镜头平移、刻度和资料面板联动。点选其他卡片定位，点选当前卡片打开资料；按钮、左右方向键和触屏横向拖动都可切换。垂直滚动保留给页面浏览。
+- **原创生成封面**：按仓库身份稳定生成图形封面，目录、三维架与详情使用同一张封面。封面是视觉标识，不是项目官方 Logo 或质量评分。
+- **暖昼与深夜**：暖灰纸面与蓝黑夜色、细线档案排版、材质和文字过渡统一；系统要求减少动态效果时直接到达终点，场景静止、隐藏或滚出视野时停止绘制。设备无法创建 WebGL 时使用可操作的封面陈列。
+
 - **发现灵感**：按构建产品、设计创作、高效工作、探索研究选择目标；在相关且已发现技能文件的仓库中轮换推荐。
 - **技能库**：多关键词 AND 检索、引号短语、排除关键词、分类、语言、文件核验筛选，支持卡片和列表显示。
 - **私人收藏**：保存在当前浏览器，离线可浏览；支持 JSON 导出与合并导入。清除浏览器存储会删除收藏，请定期备份。
@@ -38,11 +42,18 @@ python -m http.server 4173 --bind 127.0.0.1
 # 浏览器打开 http://127.0.0.1:4173
 ```
 
-不需要安装前端依赖。维护时使用 Node.js 22+ 和 Python 3.12+ 运行回归检查：
+直接使用不需要安装依赖，已提交 `scene.js` 可在静态网页和本地文件中加载。修改三维场景源码时，用 Node.js 22+ 安装固定依赖并重新打包：
+
+```powershell
+npm ci
+npm run build:scene
+```
+
+维护时使用 Node.js 22+ 和 Python 3.12+ 运行回归检查：
 
 ```powershell
 node --check main.js
-node --test tests/core.test.js
+npm test
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
@@ -71,7 +82,11 @@ GitHub Actions 会在 push / pull request 时运行这些检查。浏览器验�
 
 ```
 index.html                 页面入口，双击即可打开
-styles.css                 样式
+styles.css                 基础组件样式
+archive.css                空间档案馆视觉、排版与响应式
+covers.js                  原创程序封面（SVG）
+scene-src.js               Three.js 场景源码
+scene.js                   已打包三维场景，可直接离线使用
 core.js                    检索、排序、推荐与数据合并（无 DOM 依赖）
 main.js                    页面导航、收藏、详情与按需同步
 favicon.svg                本地站点图标
@@ -174,3 +189,9 @@ Source 选 **GitHub Actions**。之后 `.github/workflows/refresh.yml`
 - 抓取 `SKILL.md` 正文，做技能级（而非仓库级）的检索与详情页。
 - 为 Skill 和分类生成静态页面，让内容能被搜索引擎收录。
 - 拆分数据集，首屏只加载轻量索引，详情按需拉取。
+
+## 设计参考与依赖
+
+空间陈列、细线排版、暖昼／深夜和连续选片的设计研究参考 [Rhine Music Windows](https://github.com/DuoJiuBetter/Rhine-Music-Windows)（DuoJiuBetter / RonaldDeng / LBEILC）。本项目重新实现面向 Skills 的页面、场景、模型、封面与交互，没有使用该播放器的品牌、模型、音乐、字体或演示封面。
+
+渲染使用 Three.js 0.183.2（MIT），完整许可见 [third-party/three.txt](third-party/three.txt)。`scene-src.js` 是可维护源码，`scene.js` 是通过固定 esbuild 版本生成的静态发布产物；CI 会核对两者一致。

@@ -67,8 +67,9 @@ jobs:
 
       - name: Stage site
         run: |
-          mkdir -p _site/data
-          cp index.html styles.css core.js main.js favicon.svg _site/
+          mkdir -p _site/data _site/third-party
+          cp index.html styles.css archive.css core.js covers.js scene.js scene.js.LEGAL.txt main.js favicon.svg _site/
+          cp third-party/three.txt _site/third-party/
           cp data/skills.json data/skills.js data/meta.json _site/data/
           touch _site/.nojekyll
 

@@ -1,0 +1,15 @@
+{
+  "name": "skillatlas",
+  "private": true,
+  "version": "2.0.0",
+  "scripts": {
+    "build:scene": "esbuild scene-src.js --bundle --minify --format=iife --target=es2020 --legal-comments=linked --outfile=scene.js",
+    "test": "node --test tests/core.test.js tests/covers.test.js"
+  },
+  "dependencies": {
+    "three": "0.183.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

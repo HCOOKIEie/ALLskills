@@ -8,6 +8,7 @@ data/_recheck_targets.txt
 
 # 站点构建产物
 _site/
+node_modules/
 
 # 本地临时文件
 qa/

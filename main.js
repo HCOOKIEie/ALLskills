@@ -11,8 +11,8 @@
   };
   var PAGE_SIZE = 24;
   var VIEWS = {
-    discover: "发现灵感",
-    browse: "全部 Skills",
+    discover: "探索档案",
+    browse: "技能库",
     ranking: "今日涨星",
     saved: "我的收藏",
     about: "关于与数据来源",
@@ -134,6 +134,11 @@
   var snapshotBusy = false,
     lastSnapshotCheck = 0;
   var AUTO_CHECK_INTERVAL = 15 * 60 * 1000;
+  var archiveScene = null,
+    archiveAttempted = false,
+    archiveList = [],
+    archiveIndex = 0,
+    archiveKey = "";
   function exact(n) {
     return Number(n || 0).toLocaleString("en-US");
   }
@@ -246,6 +251,13 @@
       '<article class="skill-card' +
       (featured ? " featured-card" : "") +
       '">' +
+      '<button class="card-cover" data-open="' +
+      esc(skill.id) +
+      '" aria-label="查看 ' +
+      esc(skill.name) +
+      ' 档案">' +
+      window.SkillCovers.svg(skill) +
+      '<span class="cover-open">↗</span></button>' +
       (featured
         ? '<div class="featured-label">' +
           icon(index === 0 ? "sparkles" : index === 1 ? "layers" : "compass") +
@@ -322,20 +334,28 @@
   }
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
-    $("#themeToggle").innerHTML = icon(theme === "dark" ? "moon" : "sun");
+    document.querySelector('meta[name="theme-color"]').content =
+      theme === "dark" ? "#101923" : "#e9e7e0";
+    $("#themeToggle").innerHTML =
+      '<span class="' +
+      (theme === "light" ? "selected" : "") +
+      '">暖昼</span><span class="' +
+      (theme === "dark" ? "selected" : "") +
+      '">深夜</span>';
     $("#themeToggle").setAttribute(
       "aria-label",
       theme === "dark" ? "切换浅色外观" : "切换深色外观",
     );
+    if (archiveScene) archiveScene.setTheme(theme);
   }
   function setMobileMenu(open) {
     $("#sidebar").classList.toggle("is-open", open);
     $("#sidebarBackdrop").hidden = !open;
     $("#menuButton").setAttribute("aria-expanded", String(open));
     document.body.style.overflow = open ? "hidden" : "";
-    $("#sidebar").inert = window.innerWidth <= 760 && !open;
+    $("#sidebar").inert = !open;
     $("#content").inert = open;
-    if (open) $("#sidebar .brand").focus();
+    if (open) $("#sidebar .nav-item").focus();
   }
   function currentUrl(detailId) {
     var url = new URL(location.href);
@@ -417,13 +437,15 @@
     window.scrollTo({ top: 0, behavior: "instant" });
   }
   function renderChrome() {
+    document.body.dataset.page = state.view;
     var counts = categoryCounts(state.skills);
     $("#navTotal").textContent = exact(state.skills.length);
     $("#savedCount").textContent = exact(saved.size);
+    $("#headerSavedCount").textContent = exact(saved.size);
     $("#viewLabel").textContent = VIEWS[state.view];
     document.title = VIEWS[state.view] + " · SkillAtlas";
     document
-      .querySelectorAll(".sidebar [data-view]")
+      .querySelectorAll(".sidebar [data-view], .masthead-nav [data-view]")
       .forEach(function (button) {
         var active = button.dataset.view === state.view;
         button.classList.toggle("active", active);
@@ -503,6 +525,7 @@
           C.GOALS[state.goal].label +
           "」挑选，优先展示已发现技能文件的仓库。";
     var picks = C.dailyPicks(state.skills, state.goal, state.dailyOffset);
+    renderArchive(picks);
     $("#featuredGrid").innerHTML = picks.length
       ? picks
           .map(function (s, i) {
@@ -575,6 +598,187 @@
       .join("");
     renderDailyGrowthPreview();
   }
+  function renderArchive(picks) {
+    var goal = C.GOALS[state.goal];
+    var candidates = C.sortSkills(
+      state.skills.filter(function (s) {
+        return (
+          s.verified &&
+          !s.archived &&
+          (!goal.categories.length ||
+            goal.categories.indexOf(s.category) !== -1)
+        );
+      }),
+      "recommended",
+    );
+    var ids = new Set();
+    var next = picks
+      .concat(candidates)
+      .filter(function (s) {
+        if (ids.has(s.id)) return false;
+        ids.add(s.id);
+        return true;
+      })
+      .slice(0, 21);
+    var key =
+      state.goal +
+      ":" +
+      next
+        .map(function (s) {
+          return s.id;
+        })
+        .join("|");
+    var previous = archiveList[archiveIndex];
+    archiveList = next;
+    if (key !== archiveKey) {
+      archiveKey = key;
+      archiveIndex = 0;
+    } else if (previous) {
+      archiveIndex = Math.max(
+        0,
+        archiveList.findIndex(function (s) {
+          return s.id === previous.id;
+        }),
+      );
+    }
+    if (!archiveAttempted && window.SkillArchiveScene) {
+      archiveAttempted = true;
+      try {
+        archiveScene = window.SkillArchiveScene(
+          $("#archiveCanvas"),
+          selectArchive,
+          openDetail,
+        );
+      } catch (_) {
+        $("#archiveCanvas").replaceChildren();
+        $("#archiveCanvas").classList.remove("has-webgl");
+      }
+      if (archiveScene)
+        archiveScene.setTheme(document.documentElement.dataset.theme);
+    }
+    if (archiveScene) {
+      archiveScene.setActive(true);
+      archiveScene.update(archiveList, archiveIndex);
+    }
+    $("#archiveStage").classList.toggle("scene-ready", !!archiveScene);
+    renderArchiveSelection(false);
+  }
+  function selectArchive(index) {
+    if (!archiveList.length) return;
+    var next = Math.max(0, Math.min(archiveList.length - 1, index));
+    if (next === archiveIndex) return;
+    archiveIndex = next;
+    if (archiveScene) archiveScene.select(next);
+    renderArchiveSelection(true);
+  }
+  function renderArchiveSelection(animate) {
+    var focused = document.activeElement,
+      hadArchiveFocus = $("#archiveExperience").contains(focused);
+    var skill = archiveList[archiveIndex],
+      info = $("#archiveInfo");
+    $("#archiveIndex").textContent = String(archiveIndex + 1).padStart(2, "0");
+    $("#archiveTotal").textContent = String(archiveList.length).padStart(
+      2,
+      "0",
+    );
+    $("#archivePrev").disabled = archiveIndex === 0;
+    $("#archiveNext").disabled = archiveIndex >= archiveList.length - 1;
+    if (!skill) {
+      info.innerHTML =
+        '<h2>暂未发现可展示的档案</h2><button class="archive-open" data-view="browse">探索完整技能库 ↗</button>';
+      $("#archiveRuler").innerHTML = "";
+      $("#archiveFallback").innerHTML = "";
+      return;
+    }
+    info.innerHTML =
+      '<span class="archive-kicker">OPEN ARCHIVE <i>/</i> ' +
+      esc(skill.category) +
+      "</span>" +
+      '<div class="archive-file-label"><span>SKILL ' +
+      String(archiveIndex + 1).padStart(3, "0") +
+      "</span><span>" +
+      esc(skill.language || "OPEN SOURCE") +
+      "</span></div>" +
+      '<h2 title="' +
+      esc(skill.name) +
+      '">' +
+      esc(skill.name) +
+      '</h2><p class="archive-owner">' +
+      esc(skill.owner) +
+      " <span>↗</span></p>" +
+      '<p class="archive-description">' +
+      esc(skill.description || "打开档案，探索这个开源项目。") +
+      "</p>" +
+      '<div class="archive-metadata"><span><b>' +
+      compact(skill.stars) +
+      "</b> STARS</span><span><b>" +
+      exact(skill.skillCount) +
+      "</b> SKILL.md</span></div>" +
+      '<div class="archive-info-actions"><button class="archive-open" data-open="' +
+      esc(skill.id) +
+      '">查看技能档案 <span>↗</span></button>' +
+      saveButton(skill) +
+      "</div>";
+    if (
+      animate &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      info.getAnimations().forEach(function (a) {
+        a.cancel();
+      });
+      info.animate(
+        [
+          { opacity: 0.2, transform: "translateY(12px)", filter: "blur(3px)" },
+          { opacity: 1, transform: "translateY(0)", filter: "blur(0)" },
+        ],
+        { duration: 520, easing: "cubic-bezier(.2,.65,.25,1)" },
+      );
+    }
+    $("#archiveRuler").innerHTML = archiveList
+      .map(function (s, i) {
+        return (
+          '<button data-archive-index="' +
+          i +
+          '" class="' +
+          (i === archiveIndex ? "active" : "") +
+          '" aria-label="档案 ' +
+          (i + 1) +
+          "：" +
+          esc(s.name) +
+          '" aria-pressed="' +
+          (i === archiveIndex) +
+          '"><span></span></button>'
+        );
+      })
+      .join("");
+    $("#archiveFallback").innerHTML = [-2, -1, 0, 1, 2]
+      .filter(function (offset) {
+        return (
+          archiveIndex + offset >= 0 &&
+          archiveIndex + offset < archiveList.length
+        );
+      })
+      .map(function (offset) {
+        var i = archiveIndex + offset;
+        return (
+          '<button class="fallback-case" style="--offset:' +
+          offset +
+          '" ' +
+          (offset === 0
+            ? 'data-open="' + esc(archiveList[i].id)
+            : 'data-archive-index="' + i) +
+          '" aria-label="' +
+          (offset === 0 ? "查看 " : "选择 ") +
+          esc(archiveList[i].name) +
+          '">' +
+          window.SkillCovers.svg(archiveList[i]) +
+          "</button>"
+        );
+      })
+      .join("");
+    if (hadArchiveFocus && !focused.isConnected)
+      $("#archiveExperience").focus({ preventScroll: true });
+  }
   function renderDailyGrowthPreview() {
     var leaders = C.growthRanking(state.skills, 3);
     $("#dailyGrowthPreview").innerHTML = leaders.length
@@ -628,11 +832,11 @@
   function renderCatalog() {
     var isCollection = state.view === "saved";
     $("#catalogTitle").textContent = isCollection
-      ? "好工具，留给下一次灵感"
-      : "一整个世界的可能";
+      ? "我的能力收藏。"
+      : "开源能力目录。";
     $("#catalogEyebrow").textContent = isCollection
-      ? "YOUR LITTLE TOOLBOX"
-      : "THE SKILLS LIBRARY";
+      ? "PERSONAL / COLLECTION"
+      : "INDEX / OPEN SOURCE SKILLS";
     $("#catalogIntro").textContent = isCollection
       ? "属于你的工具箱，收藏保存在当前浏览器。"
       : "找到适合你的工具，把精力留给创造。";
@@ -877,6 +1081,7 @@
   function renderCurrent() {
     if (!state.ready) return;
     renderChrome();
+    if (archiveScene) archiveScene.setActive(state.view === "discover");
     $("#discoverView").hidden = state.view !== "discover";
     $("#catalogView").hidden =
       state.view !== "browse" && state.view !== "saved";
@@ -975,7 +1180,11 @@
         ? "上次完整文件索引中未发现 SKILL.md；仓库可能属于相关框架或工具，也可能在之后新增技能文件。"
         : "该仓库尚未完成技能文件核验，可以按需读取 GitHub 文件列表。";
     $("#detailBody").innerHTML =
-      '<div class="detail-heading">' +
+      '<div class="detail-visual"><span class="archive-kicker">SKILL ATLAS / OBJECT VIEW</span><div class="detail-case">' +
+      window.SkillCovers.svg(skill) +
+      '</div><span class="detail-object-id">OPEN SOURCE / ' +
+      window.SkillCovers.spec(skill).serial +
+      '</span></div><div class="detail-document"><span class="archive-kicker">ARCHIVE / 技能档案</span><div class="detail-heading">' +
       avatar(skill) +
       '<div><h2 id="detailTitle">' +
       esc(skill.name) +
@@ -1045,15 +1254,19 @@
       '复制克隆命令</button></div><p id="detailStatus" class="detail-status" role="status" aria-live="polite" hidden></p>' +
       '<section class="skill-files"><h3>里面有哪些技能？</h3><p>按需读取当前分支的 SKILL.md 路径。使用方法以仓库 README 为准。</p><div id="fileResults"><button class="button secondary" id="loadFiles">' +
       icon("file") +
-      '读取技能文件列表</button><p class="file-status">需要连接 GitHub，可能受匿名 API 配额限制。</p></div></section>';
+      '读取技能文件列表</button><p class="file-status">需要连接 GitHub，可能受匿名 API 配额限制。</p></div></section></div>';
     updateDetailSave();
     if (!$("#detailDialog").open) $("#detailDialog").showModal();
+    document.body.classList.add("detail-open");
+    if (archiveScene) archiveScene.setDetail(true);
     $("#detailDialog").scrollTop = 0;
     if (fileCache.has(skill.id.toLowerCase()))
       renderFiles(skill, fileCache.get(skill.id.toLowerCase()));
     if (!fromHistory) syncUrl();
   }
   function closeDetail(fromHistory) {
+    document.body.classList.remove("detail-open");
+    if (archiveScene) archiveScene.setDetail(false);
     if (detailRequest) {
       detailRequest.abort();
       detailRequest = null;
@@ -1414,6 +1627,17 @@
 
   document.addEventListener("click", function (event) {
     var el;
+    if (event.target.closest("[data-toggle-theme]")) {
+      var nextTheme =
+        document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      applyTheme(nextTheme);
+      writeStore("skillatlas-theme", nextTheme);
+      return;
+    }
+    if ((el = event.target.closest("[data-archive-index]"))) {
+      selectArchive(Number(el.dataset.archiveIndex));
+      return;
+    }
     if ((el = event.target.closest("[data-save]"))) {
       toggleSaved(el.dataset.save);
       return;
@@ -1588,10 +1812,38 @@
     setMobileMenu(false);
     $("#menuButton").focus();
   });
+  $("#closeMenu").addEventListener("click", function () {
+    setMobileMenu(false);
+    $("#menuButton").focus();
+  });
   document.addEventListener("keydown", function (event) {
     var typing = event.target.closest(
       'input,textarea,select,[contenteditable="true"]',
     );
+    if (
+      !typing &&
+      state.view === "discover" &&
+      !$("#detailDialog").open &&
+      event.target.closest("#archiveExperience")
+    ) {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        selectArchive(archiveIndex + (event.key === "ArrowRight" ? 1 : -1));
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        selectArchive(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        selectArchive(archiveList.length - 1);
+      } else if (
+        event.key === "Enter" &&
+        event.target === $("#archiveExperience") &&
+        archiveList[archiveIndex]
+      ) {
+        event.preventDefault();
+        openDetail(archiveList[archiveIndex].id);
+      }
+    }
     if (
       event.key === "/" &&
       !typing &&
@@ -1630,6 +1882,12 @@
     writeStore("skillatlas-theme", theme);
   });
   $("#syncNow").addEventListener("click", syncGitHub);
+  $("#archivePrev").addEventListener("click", function () {
+    selectArchive(archiveIndex - 1);
+  });
+  $("#archiveNext").addEventListener("click", function () {
+    selectArchive(archiveIndex + 1);
+  });
   $("#checkSnapshot").addEventListener("click", function () {
     refreshPublishedSnapshot(true);
   });
@@ -1663,12 +1921,7 @@
     if (wanted) openDetail(wanted, true);
   });
   window.addEventListener("resize", function () {
-    if (window.innerWidth > 760 && $("#sidebar").classList.contains("is-open"))
-      setMobileMenu(false);
-    else
-      $("#sidebar").inert =
-        window.innerWidth <= 760 &&
-        !$("#sidebar").classList.contains("is-open");
+    $("#sidebar").inert = !$("#sidebar").classList.contains("is-open");
   });
   window.addEventListener("storage", function (event) {
     if (event.key !== "skillatlas-saved" || !state.ready) return;

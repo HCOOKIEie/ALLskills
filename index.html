@@ -7,91 +7,109 @@
       name="description"
       content="发现适合你的 AI Agent Skills。探索真实 GitHub 仓库，按任务筛选、查看技能文件，收藏下一次灵感。"
     />
-    <meta name="theme-color" content="#f7f8fa" />
+    <meta name="theme-color" content="#e9e7e0" />
     <meta
       name="skillatlas-data-endpoint"
       content="https://hcookieie.github.io/ALLskills/data/skills.json"
     />
-    <title>SkillAtlas · 发现 AI 的更多可能</title>
+    <title>SkillAtlas · 开源能力档案馆</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./archive.css" />
     <script src="./data/skills.js" defer></script>
     <script src="./core.js" defer></script>
+    <script src="./covers.js" defer></script>
+    <script src="./scene.js" defer></script>
     <script src="./main.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#content">跳到主要内容</a>
     <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
     <aside class="sidebar" id="sidebar" aria-label="主导航">
-      <a
-        class="brand"
-        href="?view=discover"
-        data-view="discover"
-        aria-label="SkillAtlas 首页"
+      <button
+        class="icon-button menu-close"
+        id="closeMenu"
+        aria-label="关闭导航"
       >
-        <span class="brand-symbol" aria-hidden="true"
-          ><i></i><i></i><i></i><i></i
-        ></span>
-        <span>SkillAtlas<small>让 AI 更有用一点</small></span>
-      </a>
-      <div class="sidebar-label">工作空间</div>
+        <span data-icon="close"></span>
+      </button>
+      <div class="sidebar-label">SKILL ATLAS / NAVIGATION</div>
       <nav class="nav">
-        <button class="nav-item active" data-view="discover">
-          <span data-icon="compass"></span>发现灵感<span class="nav-dot"></span>
+        <button class="nav-item" data-view="discover">
+          <span data-icon="compass"></span>探索档案
         </button>
         <button class="nav-item" data-view="browse">
-          <span data-icon="grid"></span>全部 Skills<span
-            class="nav-count"
-            id="navTotal"
-            >—</span
-          >
+          <span data-icon="grid"></span>技能库
+          <span class="nav-count" id="navTotal">—</span>
         </button>
         <button class="nav-item" data-view="ranking">
           <span data-icon="trend"></span>今日涨星
         </button>
         <button class="nav-item" data-view="saved">
-          <span data-icon="bookmark"></span>我的收藏<span
-            class="nav-count"
-            id="savedCount"
-            >0</span
-          >
+          <span data-icon="bookmark"></span>我的收藏
+          <span class="nav-count" id="savedCount">0</span>
+        </button>
+        <button class="nav-item" data-view="about">
+          <span data-icon="info"></span>关于档案馆
+        </button>
+        <button class="nav-item" data-toggle-theme id="drawerTheme">
+          <span data-icon="sun"></span>切换暖昼 / 深夜
         </button>
       </nav>
-      <div class="sidebar-label second-label">按领域探索</div>
+      <div class="sidebar-label second-label">COLLECTIONS / 领域</div>
       <nav class="category-nav" id="categoryNav" aria-label="技能分类"></nav>
-      <div class="sidebar-bottom">
-        <div class="local-note">
-          <span class="local-note-icon" data-icon="layers"></span
-          ><b>属于你的技能工具箱</b>
-          <p>发现、了解、收藏。<br />让下一次创造，更轻松。</p>
-          <button data-view="saved">
-            打开我的收藏 <span data-icon="arrow"></span>
-          </button>
-        </div>
-        <button class="nav-item" data-view="about">
-          <span data-icon="info"></span>关于与数据来源
-        </button>
-        <div class="sidebar-footer">
-          <a
-            href="https://github.com/HCOOKIEie/ALLskills"
-            target="_blank"
-            rel="noopener noreferrer"
-            ><span data-icon="github"></span>开源共建 <span>↗</span></a
-          ><button
-            id="themeToggle"
-            class="icon-button"
-            aria-label="切换深色外观"
-            title="切换外观"
-          >
-            <span data-icon="sun"></span>
-          </button>
-        </div>
-      </div>
+      <a
+        class="sidebar-source"
+        href="https://github.com/HCOOKIEie/ALLskills"
+        target="_blank"
+        rel="noopener noreferrer"
+        >GITHUB / 开源共建 ↗</a
+      >
     </aside>
-
     <main class="main" id="content" tabindex="-1">
-      <header class="topbar">
-        <div class="topbar-start">
+      <header class="topbar masthead">
+        <a
+          class="archive-brand"
+          href="?view=discover"
+          data-view="discover"
+          aria-label="SkillAtlas 首页"
+        >
+          <span class="archive-logo" aria-hidden="true"
+            ><i></i><i></i><i></i
+          ></span>
+          <span
+            ><b>SKILL ATLAS</b
+            ><small>OPEN SOURCE ARCHIVE <i>/</i> 开源能力档案馆</small></span
+          >
+        </a>
+        <nav class="masthead-nav" aria-label="页面导航">
+          <button data-view="discover">探索</button
+          ><button data-view="browse">技能库</button
+          ><button data-view="ranking">今日涨星</button
+          ><button data-view="saved">
+            收藏<span id="headerSavedCount">0</span>
+          </button>
+        </nav>
+        <div class="masthead-actions">
+          <form class="search" id="searchForm" role="search">
+            <span data-icon="search"></span
+            ><input
+              id="searchInput"
+              type="search"
+              aria-label="搜索 Skills"
+              placeholder="搜索档案…"
+              autocomplete="off"
+              maxlength="300"
+            /><kbd>/</kbd>
+          </form>
+          <button
+            id="themeToggle"
+            class="archive-theme"
+            aria-label="切换深色外观"
+            title="切换暖昼与深夜"
+          >
+            <span>暖昼</span><span>深夜</span>
+          </button>
           <button
             class="icon-button menu-button"
             id="menuButton"
@@ -99,36 +117,15 @@
             aria-controls="sidebar"
             aria-expanded="false"
           >
-            <span data-icon="menu"></span></button
-          ><span class="breadcrumb"
-            >工作空间 <span>/</span> <b id="viewLabel">发现灵感</b></span
-          >
+            <span data-icon="menu"></span>
+          </button>
         </div>
-        <form class="search" id="searchForm" role="search">
-          <span data-icon="search"></span
-          ><input
-            id="searchInput"
-            type="search"
-            aria-label="搜索 Skills"
-            placeholder="搜索技能、作者，或一个想法…"
-            autocomplete="off"
-            maxlength="300"
-          /><kbd>/</kbd>
-        </form>
-        <a
-          class="top-github"
-          href="https://github.com/HCOOKIEie/ALLskills"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="在 GitHub 查看项目"
-          ><span data-icon="github"></span
-        ></a>
+        <span id="viewLabel" hidden>探索档案</span>
       </header>
       <div class="auto-sync-status" id="autoSyncStatus" role="status">
         <span id="autoSyncText">自动更新已开启 · 每 15 分钟检查线上快照</span
-        ><button id="checkSnapshot">立即检查</button>
+        ><button id="checkSnapshot">检查更新 ↗</button>
       </div>
-
       <div class="page-wrap">
         <div id="loadingState" class="loading-state" role="status">
           <span class="loading-mark"></span>正在打开你的技能地图…
@@ -141,84 +138,85 @@
         </div>
         <div id="appContent" hidden>
           <section id="discoverView" class="view">
-            <div class="hero">
-              <div class="hero-copy">
-                <span class="eyebrow"
-                  ><span></span>为每一种创造，找到一点助力</span
+            <div
+              class="archive-experience"
+              id="archiveExperience"
+              role="region"
+              aria-label="三维 Skills 档案架"
+              tabindex="0"
+            >
+              <div class="archive-intro">
+                <span class="archive-kicker"
+                  ><i></i> INDEPENDENT TOOLS. INFINITE POSSIBILITIES.</span
                 >
-                <h1>
-                  给你的 AI，<br />多一点<span class="hero-accent">可能。</span>
-                </h1>
-                <p>
-                  把好用的 Skills，带进你的日常。<br />从一个小想法，到下一件了不起的事。
-                </p>
-                <div class="hero-actions">
-                  <button class="button primary" data-view="browse">
-                    探索全部 Skills <span data-icon="arrow"></span></button
-                  ><button class="hero-secondary" data-view="saved">
-                    <span data-icon="bookmark"></span>我的工具箱
-                  </button>
-                </div>
-                <div class="hero-proof" id="heroProof"></div>
+                <h1>把灵感，<br />收进能力。</h1>
+                <p>一张张探索，为下一次创造找到趁手的工具。</p>
               </div>
-              <div class="hero-art" aria-hidden="true">
-                <div class="orbit orbit-one"></div>
-                <div class="orbit orbit-two"></div>
-                <div class="orbit orbit-three"></div>
-                <span class="orbit-dot dot-one"></span
-                ><span class="orbit-dot dot-two"></span
-                ><span class="orbit-dot dot-three"></span>
-                <div class="art-center"><span data-icon="sparkles"></span></div>
-                <div class="art-card art-code">
-                  <span class="art-icon blue" data-icon="code"></span>
+              <div class="archive-stage" id="archiveStage">
+                <div id="archiveCanvas" class="archive-canvas"></div>
+                <div class="archive-fallback" id="archiveFallback"></div>
+              </div>
+              <div class="archive-coordinate" aria-hidden="true">
+                <span>ARCHIVE / 001</span><span>CURATED OPEN SOURCE</span>
+              </div>
+              <div
+                class="archive-info"
+                id="archiveInfo"
+                aria-live="polite"
+              ></div>
+              <div class="archive-bottom">
+                <div class="archive-selection">
+                  <span class="archive-kicker">SKILL / SELECT</span>
                   <div>
-                    <b>把想法写成产品</b><small>BUILD SOMETHING GREAT</small>
-                  </div>
-                  <span class="art-check">✓</span>
-                </div>
-                <div class="art-card art-design">
-                  <span class="art-icon violet" data-icon="palette"></span>
-                  <div>
-                    <b>让灵感自由生长</b><small>MAKE ROOM FOR IDEAS</small>
-                  </div>
-                </div>
-                <div class="art-card art-work">
-                  <span class="art-icon green" data-icon="bolt"></span>
-                  <div>
-                    <b>少一点重复，多一点专注</b
-                    ><small>DO MORE OF WHAT MATTERS</small>
+                    <strong id="archiveIndex">01</strong
+                    ><span>/ <b id="archiveTotal">—</b></span>
                   </div>
                 </div>
-                <span class="art-caption"
-                  >A LITTLE SKILL. A LOT OF POSSIBILITY.</span
-                >
+                <div class="archive-navigation">
+                  <div
+                    class="archive-ruler"
+                    id="archiveRuler"
+                    role="group"
+                    aria-label="选择 Skills 档案"
+                  ></div>
+                  <div class="archive-arrows">
+                    <button id="archivePrev" aria-label="上一个 Skills 档案">
+                      <span data-icon="arrow"></span></button
+                    ><span>切换档案</span
+                    ><button id="archiveNext" aria-label="下一个 Skills 档案">
+                      <span data-icon="arrow"></span>
+                    </button>
+                  </div>
+                </div>
+                <div class="archive-collection">
+                  <span class="archive-kicker">COLLECTION / 领域</span>
+                  <div class="intent-options" id="goalChoices"></div>
+                </div>
+              </div>
+              <div class="archive-stage-footer">
+                <span id="heroProof"></span
+                ><span class="archive-input-hint"
+                  >← → 切换 <i>/</i> ENTER 查看 <i>/</i> 拖动探索</span
+                ><a href="#discoverCollections">向下探索 ↓</a>
               </div>
             </div>
-            <div class="snapshot-bar">
-              <span
-                ><i class="status-dot"></i
-                ><span id="snapshotLabel">本地数据快照</span></span
+            <div class="discovery-register" id="discoverCollections">
+              <span>01 — THE COLLECTION</span
+              ><span id="snapshotLabel">数据快照</span
               ><button id="syncNow">
                 <span data-icon="refresh"></span
                 ><span id="syncLabel">同步 GitHub</span>
               </button>
             </div>
             <p class="sync-feedback" id="syncFeedback" role="status" hidden></p>
-            <section class="intent-section" aria-labelledby="intentHeading">
-              <div class="section-heading compact">
-                <h2 id="intentHeading">今天，想做点什么？</h2>
-                <span>从你的目标开始</span>
-              </div>
-              <div class="intent-options" id="goalChoices"></div>
-            </section>
             <section
               class="recommend-section"
               aria-labelledby="recommendHeading"
             >
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">MADE FOR YOUR NEXT IDEA</span>
-                  <h2 id="recommendHeading">值得一试</h2>
+                  <span class="eyebrow">SELECTED / FOR YOUR NEXT IDEA</span>
+                  <h2 id="recommendHeading">下一件趁手的工具</h2>
                   <p id="recommendNote">
                     从已发现 SKILL.md 的仓库里，为你挑选。
                   </p>
@@ -235,7 +233,7 @@
             >
               <div class="section-heading">
                 <div>
-                  <h2 id="categoriesHeading">找到你的方向</h2>
+                  <h2 id="categoriesHeading">按领域，继续探索</h2>
                   <p>每一种好奇，都有一个起点。</p>
                 </div>
                 <button class="text-button" data-view="browse">
@@ -282,9 +280,9 @@
             <div class="page-heading">
               <div>
                 <span class="eyebrow" id="catalogEyebrow"
-                  >THE SKILLS LIBRARY</span
+                  >INDEX / OPEN SOURCE SKILLS</span
                 >
-                <h1 id="catalogTitle">一整个世界的可能</h1>
+                <h1 id="catalogTitle">开源能力目录。</h1>
                 <p id="catalogIntro">找到适合你的工具，把精力留给创造。</p>
               </div>
               <button class="button secondary" id="shareFilters">
@@ -394,7 +392,7 @@
             <div class="page-heading">
               <div>
                 <span class="eyebrow">A CLEARER PICTURE</span>
-                <h1 id="aboutTitle">好工具，也需要透明的信息</h1>
+                <h1 id="aboutTitle">关于这座能力档案馆</h1>
                 <p>了解这张技能地图从哪里来，以及它的边界。</p>
               </div>
             </div>
@@ -460,7 +458,7 @@
               </article>
             </div>
             <div class="about-bottom">
-              <span>保持轻巧。纯静态，无构建依赖。</span
+              <span>把好工具，带进下一次创造。</span
               ><a
                 href="https://github.com/HCOOKIEie/ALLskills"
                 target="_blank"
@@ -473,9 +471,12 @@
           <footer class="footer">
             <span
               ><span class="footer-brand">SkillAtlas</span>
-              一个发现好工具的小地方。</span
+              为创造者收集开源能力。</span
             ><span id="footerStamp"></span
-            ><span>Keep exploring <span class="footer-spark">✦</span></span>
+            ><span
+              >STAY CURIOUS. BUILD SOMETHING.
+              <span class="footer-spark">✦</span></span
+            >
           </footer>
         </div>
       </div>
