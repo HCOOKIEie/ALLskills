@@ -1,41 +1,41 @@
 {
- "generatedAt": "2026-11-12T00:52:25.447483+00:00",
+ "generatedAt": "2026-11-12T11:29:47.069680+00:00",
  "source": "GitHub Search API + Git Tree API + jsDelivr file index",
  "authenticated": true,
  "queries": 22,
- "reposKept": 4681,
+ "reposKept": 4699,
  "reposFilteredOut": 41,
- "verifiedRepos": 3547,
+ "verifiedRepos": 3564,
  "verifiedBySource": {
-  "github-tree": 1855,
-  "jsdelivr": 1692
+  "github-tree": 1857,
+  "jsdelivr": 1707
  },
- "skillSignalRepos": 4098,
- "skillsCounted": 133284,
+ "skillSignalRepos": 4115,
+ "skillsCounted": 133446,
  "minStars": 3,
  "categoryCounts": {
-  "集成连接": 878,
-  "数据科学": 436,
+  "集成连接": 881,
+  "数据科学": 439,
   "Agent 框架": 255,
   "科研学术": 380,
-  "编程开发": 1352,
-  "设计创意": 693,
+  "编程开发": 1355,
+  "设计创意": 698,
   "其他": 38,
-  "文档办公": 204,
+  "文档办公": 206,
   "浏览器自动化": 141,
-  "写作内容": 233,
+  "写作内容": 235,
   "效率工具": 61,
   "生物医药": 10
  },
  "growth": {
   "windowHours": 24,
   "toleranceHours": 3,
-  "comparableRepos": 2387,
-  "positiveRepos": 1318,
-  "freshRepos": 2907,
-  "trackedRepos": 4601,
-  "firstObservedAt": "2026-11-05T01:29:27+00:00",
-  "status": "ready"
+  "comparableRepos": 0,
+  "positiveRepos": 0,
+  "freshRepos": 2897,
+  "trackedRepos": 4618,
+  "firstObservedAt": "2026-11-05T20:02:10+00:00",
+  "status": "warming"
  },
  "refreshIntervalHours": 3
 }
